@@ -1,27 +1,12 @@
 #pragma once
 
-#include "scenes/GameOverScene.h"
-#include "scenes/GameScene.h"
-#include "scenes/MenuScene.h"
-#include "scenes/Scene.h"
+#include "battle/BattleScene.h"
 
 #include <SDL2/SDL.h>
 
 #include <memory>
 
-/*
- * The World class is where all of the game logic happens, with things
- * such as collision detection, and input handling.
- * */
-
 class Core;
-
-enum class Scenes
-{
-   MENU,
-   GAME,
-   GAME_OVER
-};
 
 class Game {
   public:
@@ -34,12 +19,12 @@ class Game {
 
    void update();
 
+   void shutdown();
+
    void setCore(Core* core);
 
   private:
-   Core* core;
+   Core* core = nullptr;
 
-   Scenes currentScene;
-
-   std::unique_ptr<Scene> scene;
+   std::unique_ptr<BattleScene> scene;
 };

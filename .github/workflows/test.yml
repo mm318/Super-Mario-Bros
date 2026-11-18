@@ -35,3 +35,6 @@ jobs:
         run: zig fmt --check build.zig build.zig.zon deps/sdl/build.zig deps/sdl/build.zig.zon deps/sdl_image/build.zig deps/sdl_image/build.zig.zon deps/sdl_mixer/build.zig deps/sdl_mixer/build.zig.zon deps/sdl_ttf/build.zig deps/sdl_ttf/build.zig.zon deps/freetype/build.zig deps/freetype/build.zig.zon
       - name: Build game
         run: zig build -Dtarget=${{ matrix.target }} -Doptimize=${{ matrix.optimize }}
+      - name: Test battle rules
+        if: matrix.target == 'native' && matrix.optimize == 'debug'
+        run: zig build test

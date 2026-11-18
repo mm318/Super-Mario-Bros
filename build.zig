@@ -3,33 +3,13 @@ const Build = std.Build;
 const builtin = @import("builtin");
 
 const source_files = [_][]const u8{
-    "AABBCollision.cpp",
-    "Camera.cpp",
     "Core.cpp",
     "Game.cpp",
-    "Input.cpp",
-    "Map.cpp",
-    "SoundManager.cpp",
     "TextureManager.cpp",
-    "command/CommandScheduler.cpp",
+    "SoundManager.cpp",
+    "battle/BattleGame.cpp",
+    "battle/BattleScene.cpp",
     "main.cpp",
-    "scenes/GameOverScene.cpp",
-    "scenes/GameScene.cpp",
-    "scenes/MenuScene.cpp",
-    "systems/AnimationSystem.cpp",
-    "systems/CallbackSystem.cpp",
-    "systems/CollectibleSystem.cpp",
-    "systems/EnemySystem.cpp",
-    "systems/FlagSystem.cpp",
-    "systems/MapSystem.cpp",
-    "systems/MenuSystem.cpp",
-    "systems/OptionsSystem.cpp",
-    "systems/PhysicsSystem.cpp",
-    "systems/PlayerSystem.cpp",
-    "systems/RenderSystem.cpp",
-    "systems/ScoreSystem.cpp",
-    "systems/SoundSystem.cpp",
-    "systems/WarpSystem.cpp",
 };
 
 const resource_dirs = [_][]const u8{
@@ -43,6 +23,20 @@ pub fn build(b: *Build) void {
     var target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
     const web = target.result.os.tag == .emscripten;
+
+    const test_module = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .debug,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+    test_module.addIncludePath(b.path("include"));
+    test_module.addCSourceFiles(.{
+        .files = &.{ "tests/BattleGameTests.cpp", "src/battle/BattleGame.cpp" },
+        .flags = &.{ "-std=c++17", "-Wall", "-Wextra", "-Werror" },
+    });
+    const tests = b.addExecutable(.{ .name = "battle-tests", .root_module = test_module });
+    b.step("test", "Check battle rules and deterministic simulation").dependOn(&b.addRunArtifact(tests).step);
 
     const emsdk = b.dependency("emsdk", .{});
     b.step("install-emsdk", "Install Emscripten 7.0.0 in zig-pkg").dependOn(emSdkInstallStep(b, emsdk));
@@ -116,7 +110,7 @@ pub fn build(b: *Build) void {
         });
         run.addPassthruArgs();
         run.step.dependOn(b.getInstallStep());
-        b.step("run", "Run Super Mario Bros in a browser").dependOn(&run.step);
+        b.step("run", "Run Mario Battle Game in a browser").dependOn(&run.step);
     } else {
         if (target.result.os.tag == .windows) mod.addWin32ResourceFile(.{
             .file = b.path("res/super_mario_bros.rc"),
@@ -144,7 +138,7 @@ pub fn build(b: *Build) void {
         });
         run.addPassthruArgs();
         run.step.dependOn(b.getInstallStep());
-        b.step("run", "Run Super Mario Bros on the desktop").dependOn(&run.step);
+        b.step("run", "Run Mario Battle Game on the desktop").dependOn(&run.step);
     }
 }
 

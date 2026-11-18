@@ -3,7 +3,6 @@
 #include "Constants.h"
 #include "SoundManager.h"
 #include "TextureManager.h"
-#include "command/CommandScheduler.h"
 
 #include <iostream>
 #include <stdlib.h>
@@ -37,6 +36,7 @@ void Core::run() {
    while (running) {
       mainLoop();
    }
+   game.shutdown();
    TextureManager::Get().Quit();
    SoundManager::Get().Quit();
 }
@@ -47,7 +47,6 @@ void Core::mainLoop() {
 #endif
    game.handleInput();
    game.update();
-   CommandScheduler::getInstance().run();
 #ifndef __EMSCRIPTEN__
    limitFPS(startTicks);
 #endif

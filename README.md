@@ -1,130 +1,114 @@
-# Super Mario Bros
+# Super Mario Bros. — Battle Game
 
-A recreation of the Super Mario Bros game from the Nintendo NES using C++ and the SDL2 Library
+A simultaneous local two-player arena platformer, rebuilt from this repository's
+C++/SDL game using its Mario/Luigi, Spiny, Koopa, tile, mushroom and coin sprites,
+Press Start 2P font, music and sound effects. Crab, Fighter Fly, Boo and POW art is
+rendered as small pixel shapes to accompany the existing NES assets.
 
-Demo Video: https://www.youtube.com/watch?v=2BYdCmH1EEY
+Defeat enemies to create **shared coins**, race to collect five, or eliminate the
+other player. Win five rounds to earn a match star. There is one fixed, wrapping
+arena, continuous enemy replenishment, and no campaign or bonus stages.
 
-Play it online! https://gold872.github.io/games/super_mario_bros/
+## Play
 
-* *NOTE: The web build is lower quality and may contain some glitches*
+Press **Enter** on the title screen. Two people play simultaneously on one keyboard,
+or connect two SDL-compatible gamepads (first connected is Mario).
 
-## Compiling
+| Action | Mario | Luigi | Gamepad |
+| --- | --- | --- | --- |
+| Move | F / H | Left / Right | D-pad / left stick |
+| Jump (hold for height) | S | . (period) | A / B |
+| Dash (hold) | A | , (comma) | X / Y |
+| Crouch when Super | G | Down | D-pad / stick down |
 
-Use **Zig 0.17.1**. The game and its SDL dependencies are built from source.
-The dependency versions and source checksums are documented in
-[deps/README.md](deps/README.md).
+**Enter / Space** starts the game, continues after a round, and starts another
+match after a victory. **Escape** pauses; **Tab** opens the rules and pauses
+play; **M** mutes; **F11** toggles fullscreen. Gamepad Start pauses/continues and
+Back opens the rules. In pause, **R** restarts the match and **Q** returns to the
+title. Losing window focus pauses automatically. Stars survive restart/title.
 
-On Ubuntu, install the native system dependencies:
+Jump through a platform beneath a grounded enemy to bump its segment; land on
+that platform and touch the stunned enemy to kick it. A coin then enters from an
+upper pipe. **Kicks don't award coins automatically.** Either player can collect
+any coin. Platforms are passable upward and solid downward; a head crossing
+triggers the bump without cancelling the jump.
+
+- Spiny needs one bump; Crab needs two; Fighter Fly must be touching a platform.
+- Stunned enemies recover faster. Bumping a stunned enemy turns it upright early,
+  changes its color and increases its speed.
+- Both players start every round Super. Damage makes them Small, with brief
+  invulnerability; another hit eliminates them and immediately awards the round.
+- Stomp Koopa and kick its shell at your opponent. It recovers, never awards coins,
+  and its moving shell tosses regular enemies without killing them.
+- The central POW overturns regular enemies anywhere, clears Boos and has three
+  charges. It returns after a random delay once exhausted.
+- Mushrooms restore Super size. A red ? Mushroom swaps player positions when
+  sizes match, or swaps their sizes when they differ.
+- Coins and enemies recycle through the lower pipes. Unclaimed coins don't expire.
+- Round rosters follow the supplied nine-round table. First to five round wins
+  ends the match, after five to nine rounds. A player's sixth star resets their
+  displayed stars to zero.
+
+Stars are stored in SDL's application preferences directory under
+`SuperMarioBros/BattleGame/stars.txt` on desktop and in this browser origin's
+`localStorage` on web. A new match resets rounds and coins while keeping stars.
+
+## Build and run
+
+Use **Zig 0.17.1**. SDL and its dependencies are built from source; pinned versions
+and checksums are in [deps/README.md](deps/README.md). On Ubuntu:
 
 ```sh
 sudo apt install libxext-dev libgles-dev libglx-dev libpulse-dev
-```
-
-### Native desktop
-
-```sh
-zig build                   # Debug
-zig build -Doptimize=safe   # Release with runtime safety checks
+zig build
 zig build -Doptimize=safe run
 ```
 
-The executable is `zig-out/bin/super-mario-bros` (`super-mario-bros.exe` on Windows).
-Its runtime assets are installed alongside it in `zig-out/bin/res`.
-Keep that directory with the executable when distributing the native build.
-The executable locates assets relative to its own directory.
+The executable is `zig-out/bin/super-mario-bros` (`.exe` on Windows), retaining
+the existing artifact name. Its assets are installed in `zig-out/bin/res`;
+keep them together. Assets are located relative to the executable, so it works
+from another working directory. `debug`, `safe`, `fast`, and `small` are supported.
 
-The Windows icon is compiled from `res/super_mario_bros.rc` and `res/icon.ico`.
-
-### Web browser
-
-Install the pinned **Emscripten 7.0.0** SDK into `zig-pkg`:
+For the existing Emscripten browser target:
 
 ```sh
-zig build install-emsdk
-```
-
-Build or run the browser version:
-
-```sh
-zig build -Dtarget=wasm32-emscripten                        # Debug
-zig build -Dtarget=wasm32-emscripten -Doptimize=fast        # Release
+zig build install-emsdk                 # Pinned Emscripten 7.0.0, once
+zig build -Dtarget=wasm32-emscripten -Doptimize=fast
 zig build -Dtarget=wasm32-emscripten -Doptimize=fast run
-# Serve without opening a browser:
-zig build -Dtarget=wasm32-emscripten -Doptimize=fast run -- --no_browser
+# To serve without opening a browser, append: -- --no_browser
 ```
 
-The web build is installed to `zig-out/web/index.html`. Serve the entire
-`zig-out/web` directory, including `index.js`, `index.wasm`, `index.data`, and
-`coi-serviceworker.js`. The data file contains the game's levels, sprites,
-fonts, and sounds. The service worker supplies cross-origin isolation for
-pthreads on localhost or HTTPS.
+Serve all of `zig-out/web`, including `index.html`, `.js`, `.wasm`, `.data`, and
+`coi-serviceworker.js`. Pthreads require cross-origin isolation; the service
+worker supplies it on localhost or HTTPS. The loop uses requestAnimationFrame
+without Asyncify; keyboard controls work when the game has focus.
 
-The web build uses `requestAnimationFrame` without Asyncify. Frame pacing,
-options key selection, and level loading return control to the browser without
-blocking waits.
+## Rules and verification
 
-`debug`, `safe`, `fast`, and `small` are the optimization modes. Build outputs
-and downloaded SDK files are ignored by Git.
+```sh
+zig build test
+```
 
-## Controls
+The SDL-independent simulation is in `include/battle/BattleGame.h` and
+`src/battle/BattleGame.cpp`. `BattleScene` handles input, rendering, audio, menus,
+and star persistence. Old campaign code/assets remain as source resources but
+are excluded from the executable; the only playable flow is Battle Game.
 
-| Action | Default key |
-| --- | --- |
-| Left | F |
-| Right | H |
-| Jump | S |
-| Duck | G |
-| Sprint | A |
-| Fireball | D |
+Tests cover five-coin wins, five-to-nine-round matches, star rollover, all nine
+rosters, enemy state transitions, actual jump/bump/kick reachability, contested
+coins, damage, both ? Mushroom cases, POW exhaustion/regeneration, spawning,
+Koopa stomping/shells, variable jumps, wrapping, simultaneous input and 162,000
+stress simulation steps. CI builds native and web configurations and runs rules
+tests. The rules tests can also run with AddressSanitizer/UBSan via a C++17 compiler.
 
-Use the arrow keys and Enter in menus, and Escape to pause or go back.
-Gameplay keys can be changed in the options menu.
+This is a rules-based recreation using the supplied specification, with NES art,
+not a frame-accurate SNES emulation. Unverified movement constants, enemy caps,
+spawn/recovery/invulnerability timings and item/POW distributions are adjustable
+in `battle::Rules`. Coin trajectories use platform gravity and continuous pipe
+recycling. Player contact pushes horizontally without direct damage. Simultaneous
+collisions resolve coins before damage; Mario takes an exact same-step tie for one
+coin. Damage checks Mario first, so an exact simultaneous fatal collision awards
+Luigi the round. Round state freezes immediately after the first award.
 
-## How it Works
-
-### The Entities
-
-- The Entities in this game are creating using an Entity Component System
-    - Instead of having one Entity class that every Entity inherits, an Entity is a class that has nothing, but you are able to attatch components to it. Such components include:
-        - Position Component
-        - Texture Component
-        - Moving Component
-
-    - These Components get used by the Systems, where they find Entities with certain components, and update the Entities properly using the data from the Components.
-
-- Entities don't only serve the purpose of displaying a texture on the screen, some are used to add properties to Entities (For example, classifying an entity as the player with the PlayerComponent), and some are also used to schedule an action (this is most commonly used in the sound and score system)
-
-### The Commands
-
-- Commands are used to perform actions that aren't focused on one entity. Commands are most commonly used in sequences, where multi-step processes are executed in order. Examples of this being used is the WarpCommand for warp-pipes and the VineCommand for climbing a vine.
-
-### The Levels
-
-- The Levels were created with the help of a program called [Tiled Map Editor](https://www.mapeditor.org/)
-
-- After creating the Map in the Tiled Editor, they are exported as a CSV file, and then get read by the Map class, and using the IDs from the Map, the Entities get created with their needed components.
-
-## Special Thanks
-People that have been a huge help in developing this project with their amazing knowledge and skills
- - [Killme](https://github.com/killme)
- - [friedkeenan](https://github.com/friedkeenan/)
-
-## Screenshots
-
-### Main Menu
-![Main Menu](res/screenshots/menu.png)
-
-### Game
-![Game](res/screenshots/game.png)
-
-### Pause Screen
-![Pause Screen](res/screenshots/pause.png)
-
-### Options
-![Options](res/screenshots/options.png)
-
-### Underwater
-![Underwater Level](res/screenshots/underwater.png)
-
-### Gameover
-![Game Over](res/screenshots/gameover.png)
+Original project: an MIT-licensed C++/SDL Super Mario Bros. recreation. See
+[LICENSE](LICENSE) for the repository license.

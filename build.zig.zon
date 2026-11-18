@@ -13,5 +13,5 @@
         .sdl_mixer = .{ .path = "deps/sdl_mixer" },
         .sdl_ttf = .{ .path = "deps/sdl_ttf" },
     },
-    .paths = .{ "build.zig", "build.zig.zon", "src", "include", "deps", "res", "web_assets", "README.md", "LICENSE" },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "include", "tests", "deps", "res", "web_assets", "README.md", "LICENSE" },
 }

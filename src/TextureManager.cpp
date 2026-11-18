@@ -11,7 +11,7 @@
 TextureManager TextureManager::instance;
 
 int TextureManager::Init() {
-   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_TIMER) != 0) {
+   if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_EVENTS | SDL_INIT_TIMER | SDL_INIT_GAMECONTROLLER) != 0) {
       std::cerr << "Failed to Initialize SDL2: " << SDL_GetError() << std::endl;
       return -1;
    }
@@ -24,7 +24,8 @@ int TextureManager::Init() {
       return -1;
    }
 
-   window = SDL_CreateWindow("Super Mario Bros", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
+   window = SDL_CreateWindow("Super Mario Bros. - Battle Game", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                              SCREEN_WIDTH, SCREEN_HEIGHT,
                              SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
    if (!window) {
@@ -40,6 +41,7 @@ int TextureManager::Init() {
    SDL_FreeSurface(iconSurface);
 
    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+   if (!renderer) renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
    if (!renderer) {
       SDL_LogError(SDL_LOG_CATEGORY_RENDER, "Failed to Create Renderer: %s", SDL_GetError());
       std::cerr << "Failed to Create Renderer: " << SDL_GetError() << std::endl;
