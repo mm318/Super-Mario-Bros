@@ -59,6 +59,10 @@ The web build is installed to `zig-out/web/index.html`. Serve the entire
 fonts, and sounds. The service worker supplies cross-origin isolation for
 pthreads on localhost or HTTPS.
 
+The web build uses `requestAnimationFrame` without Asyncify. Frame pacing,
+options key selection, and level loading return control to the browser without
+blocking waits.
+
 `debug`, `safe`, `fast`, and `small` are the optimization modes. Build outputs
 and downloaded SDK files are ignored by Git.
 
