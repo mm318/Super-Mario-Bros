@@ -26,7 +26,7 @@ void runLoop(void* data) {
 }
 #endif
 
-int main(int argc, char** argv) {
+int main() {
    SDL_SetMainReady();
 #ifndef __EMSCRIPTEN__
    char* base = SDL_GetBasePath();

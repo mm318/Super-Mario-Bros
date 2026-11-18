@@ -1,22 +1,15 @@
 #pragma once
 
-#include "Game.h"
+#include "battle/BattleScene.h"
+#include <memory>
 
 class Core {
-  public:
-   Core();
-
+public:
    int init();
-
    void run();
-
    void mainLoop();
 
-   void limitFPS(Uint64 startTick);
-
-   void setRunning(bool val);
-
-  private:
-   Game game;
-   bool running;
+private:
+   std::unique_ptr<BattleScene> scene;
+   bool running = true;
 };

@@ -97,17 +97,17 @@ void BattleScene::handleEvent(const SDL_Event& e) {
    if (paused && key==SDLK_q) { title=true; help=false; setPaused(false); SoundManager::Get().stopMusic(); return; }
    if (paused && key==SDLK_r) {
       game.startMatch(); help=false; setPaused(false); particles.clear();
-      SoundManager::Get().playMusic(MusicID::UNDERGROUND); return;
+      SoundManager::Get().playMusic(); return;
    }
    if (key==SDLK_RETURN || key==SDLK_SPACE) {
       if (help) { help=false; if (!title) setPaused(false); return; }
       if (title) {
          title=false; game.startMatch(); particles.clear(); accumulator=0;
-         SoundManager::Get().playMusic(MusicID::UNDERGROUND);
+         SoundManager::Get().playMusic();
       } else if (paused) setPaused(false);
       else if (resultDelay>.6f && (game.phase==battle::Phase::RoundOver || game.phase==battle::Phase::MatchOver)) {
          game.nextRound(); particles.clear(); resultDelay=0; accumulator=0;
-         SoundManager::Get().playMusic(MusicID::UNDERGROUND);
+         SoundManager::Get().playMusic();
       }
    }
 }

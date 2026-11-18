@@ -56,7 +56,6 @@ struct Item : Body {
    ItemType type = ItemType::Coin;
    bool alive = true;
    int direction = 1;
-   float age = 0;
 };
 struct Boo : Body {
    bool diagonal = false;
@@ -97,7 +96,7 @@ public:
    Phase phase = Phase::Ready;
    int round = 1, winner = -1, powCharges = 3;
    bool coinVictory = false;
-   float readyTimer = 0, elapsed = 0, shake = 0;
+   float readyTimer = 0, shake = 0;
 
 private:
    std::mt19937 random;
@@ -105,7 +104,7 @@ private:
    bool nextPipeRight = false, nextBooDiagonal = false;
    void resetRound();
    float range(float low, float high);
-   bool moveBody(Body& body, float halfWidth, float dt);
+   void moveBody(Body& body, float halfWidth, float dt);
    void updatePlayer(int index, const Input& input, float dt);
    void updateEnemies(float dt);
    void updateItems(float dt);

@@ -2,7 +2,6 @@
 #include <cmath>
 #include <cstdlib>
 #include <iostream>
-#include <string>
 using namespace battle;
 #define CHECK(x) do { if (!(x)) { std::cerr << __func__ << ':' << __LINE__ << ": " #x " failed\n"; std::exit(1); } } while (0)
 namespace {

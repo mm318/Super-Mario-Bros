@@ -1,22 +1,8 @@
 #include "Core.h"
-
-#include "Constants.h"
 #include "SoundManager.h"
 #include "TextureManager.h"
 
 #include <iostream>
-#include <stdlib.h>
-
-Core::Core() {
-   game = Game(this);
-   running = true;
-}
-
-void Core::limitFPS(Uint64 startTick) {
-   if (1000 / MAX_FPS > SDL_GetTicks64() - startTick) {
-      SDL_Delay(1000 / MAX_FPS - (SDL_GetTicks64() - startTick));
-   }
-}
 
 int Core::init() {
    if (TextureManager::Get().Init() != 0) {
@@ -27,32 +13,30 @@ int Core::init() {
       std::cerr << "Error Initializing Sound Manager" << std::endl;
       return -1;
    }
-   srand(time(NULL));  // Generates a random time seed for the game to generate random numbers
-   game.init();
+   scene = std::make_unique<BattleScene>();
    return 0;
 }
 
 void Core::run() {
-   while (running) {
-      mainLoop();
-   }
-   game.shutdown();
-   TextureManager::Get().Quit();
+   while (running) mainLoop();
+   scene.reset();
    SoundManager::Get().Quit();
+   TextureManager::Get().Quit();
 }
 
 void Core::mainLoop() {
 #ifndef __EMSCRIPTEN__
-   Uint64 startTicks = SDL_GetTicks64();
+   const Uint64 startTicks = SDL_GetTicks64();
 #endif
-   game.handleInput();
-   game.update();
+   SDL_Event event;
+   while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_QUIT) running = false;
+      else scene->handleEvent(event);
+   }
+   scene->update();
 #ifndef __EMSCRIPTEN__
-   limitFPS(startTicks);
+   constexpr Uint64 frameMillis = 1000 / 60;
+   const Uint64 elapsed = SDL_GetTicks64() - startTicks;
+   if (elapsed < frameMillis) SDL_Delay(frameMillis - elapsed);
 #endif
-   std::cout << std::flush;
-}
-
-void Core::setRunning(bool val) {
-   running = val;
 }

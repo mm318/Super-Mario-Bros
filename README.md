@@ -91,8 +91,10 @@ zig build test
 
 The SDL-independent simulation is in `include/battle/BattleGame.h` and
 `src/battle/BattleGame.cpp`. `BattleScene` handles input, rendering, audio, menus,
-and star persistence. Old campaign code/assets remain as source resources but
-are excluded from the executable; the only playable flow is Battle Game.
+and star persistence. `Core` owns the scene and application loop; the former
+campaign scenes, ECS systems, commands and map code have been removed. Builds
+package the fonts, sounds and sprites used by Battle Game; campaign level data
+is no longer installed or preloaded.
 
 Tests cover five-coin wins, five-to-nine-round matches, star rollover, all nine
 rosters, enemy state transitions, actual jump/bump/kick reachability, contested

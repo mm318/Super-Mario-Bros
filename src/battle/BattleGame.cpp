@@ -60,7 +60,7 @@ void BattleGame::resetRound() {
    koopa = {}; koopa.x = 400; koopa.y = 240; koopa.grounded = true;
    powCharges = 3; powTimer = 0;
    phase = Phase::Ready; winner = -1; coinVictory = false;
-   readyTimer = rules.readySeconds; elapsed = 0; shake = 0;
+   readyTimer = rules.readySeconds; shake = 0;
    enemyTimer = rules.enemySpawnSeconds; booTimer = rules.booSpawnSeconds;
    itemTimer = rules.itemSpawnSeconds; nextPipeRight = false;
    nextBooDiagonal = false;
@@ -87,7 +87,7 @@ void BattleGame::spawnItem(ItemType type) {
    nextPipeRight = !nextPipeRight;
    items.push_back(item);
 }
-bool BattleGame::moveBody(Body& b, float halfWidth, float dt) {
+void BattleGame::moveBody(Body& b, float halfWidth, float dt) {
    const float previousY = b.y;
    b.x += b.vx * dt; wrap(b);
    b.vy = std::min(b.vy + rules.gravity * dt, 700.f);
@@ -101,7 +101,6 @@ bool BattleGame::moveBody(Body& b, float halfWidth, float dt) {
       }
       if (b.y >= landing) { b.y = landing; b.vy = 0; b.grounded = true; }
    }
-   return b.grounded;
 }
 void BattleGame::updatePlayer(int index, const Input& in, float dt) {
    auto& p = players[index];
@@ -227,7 +226,6 @@ void BattleGame::updateEnemies(float dt) {
 void BattleGame::updateItems(float dt) {
    for (auto& item : items) {
       if (!item.alive) continue;
-      item.age += dt;
       item.vx = item.direction * (item.type == ItemType::Coin ? rules.coinSpeed : rules.mushroomSpeed);
       moveBody(item, 9, dt);
       // Unclaimed coins keep cycling; they have no owner and never expire.
@@ -342,7 +340,7 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
       return;
    }
    if (phase != Phase::Playing) return;
-   elapsed += dt; shake = std::max(0.f, shake - dt);
+   shake = std::max(0.f, shake - dt);
    for (auto& s : segments) s.bump = std::max(0.f, s.bump - dt);
    for (int i = 0; i < 2; ++i) updatePlayer(i, inputs[i], dt);
    updateEnemies(dt); updateItems(dt); updateBoos(dt); collisions(dt);

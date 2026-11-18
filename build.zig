@@ -4,7 +4,6 @@ const builtin = @import("builtin");
 
 const source_files = [_][]const u8{
     "Core.cpp",
-    "Game.cpp",
     "TextureManager.cpp",
     "SoundManager.cpp",
     "battle/BattleGame.cpp",
@@ -13,7 +12,6 @@ const source_files = [_][]const u8{
 };
 
 const resource_dirs = [_][]const u8{
-    "data",
     "fonts",
     "sounds",
     "sprites",
@@ -71,7 +69,6 @@ pub fn build(b: *Build) void {
         "-std=c++17",
         "-Wall",
         "-Wextra",
-        "-Wno-unused-parameter",
     };
 
     mod.addCSourceFiles(.{
