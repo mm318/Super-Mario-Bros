@@ -1,4 +1,3 @@
-
 # Super Mario Bros
 
 A recreation of the Super Mario Bros game from the Nintendo NES using C++ and the SDL2 Library
@@ -11,33 +10,57 @@ Play it online! https://gold872.github.io/games/super_mario_bros/
 
 ## Compiling
 
-The following libraries are required to compile and run this project
-- [SDL2](https://www.libsdl.org/download-2.0.php)
-- [SDL2_Image](https://www.libsdl.org/projects/SDL_image/)
-- [SDL2_TTF](https://www.libsdl.org/projects/SDL_ttf/release/)
-- [SDL2_Mixer](https://libsdl.org/projects/SDL_mixer/)
+Use **Zig 0.17.1**. The game and its SDL dependencies are built from source.
+The dependency versions and source checksums are documented in
+[deps/README.md](deps/README.md).
 
-Once you have the zip files extracted and the dlls placed into the project directory, compile using one of the following methods
+On Ubuntu, install the native system dependencies:
 
-### Makefile (Recommended)
-
-1. Open the [Makefile](Makefile)
-
-2. Replace the areas where you see \*\*\*\*\*\*SDL2 LOCATION\*\*\*\*\*\* with the direct location of the folder for the specified library
-    - If you are using windows, in the LINKER_FLAGS section, add `-lmingw32` before `$(SDL2_LINKER_FLAGS)`
-
-3. Run the Makefile build command, `make`
-
-    - The MinGW compiler has a different command, `mingw32-make`
-
-### Command Line
-
-```bash
-g++ -std=c++17 -static-libgcc -static-libstdc++ -mwindows -I"include" -I"<SDL2 Location>/include" -I"<SDL2_image Location>/include" -I"<SDL2_mixer Location>/include" -I"<SDL2_ttf Location>/include" src/*.cpp src/*/*.cpp -O1 -o "Super Mario Bros" res/super_mario_bros.res -L"<SDL2 Location>/lib" -L"<SDL2_image Location>/lib" -L"<SDL2_TTF Location>/lib" -L"<SDL2_Mixer Location>/lib" -lSDL2main -lSDL2 -lSDL2_image -lSDL2_ttf -lSDL2_mixer
+```sh
+sudo apt install libxext-dev libgles-dev libglx-dev libpulse-dev
 ```
-*Note: If you are on Windows and using MinGW32, you must add* `-lmingw32` *before* `-lSDL2main` *in the command*
 
-The [bin](bin) directory contains a precompiled executable if you do not want to go through the installation and compiling process
+### Native desktop
+
+```sh
+zig build                   # Debug
+zig build -Doptimize=safe   # Release with runtime safety checks
+zig build -Doptimize=safe run
+```
+
+The executable is `zig-out/bin/super-mario-bros` (`super-mario-bros.exe` on Windows).
+Its runtime assets are installed alongside it in `zig-out/bin/res`.
+Keep that directory with the executable when distributing the native build.
+The executable locates assets relative to its own directory.
+
+The Windows icon is compiled from `res/super_mario_bros.rc` and `res/icon.ico`.
+
+### Web browser
+
+Install the pinned **Emscripten 7.0.0** SDK into `zig-pkg`:
+
+```sh
+zig build install-emsdk
+```
+
+Build or run the browser version:
+
+```sh
+zig build -Dtarget=wasm32-emscripten                       # Debug
+zig build -Dtarget=wasm32-emscripten -Doptimize=fast       # Release
+zig build -Dtarget=wasm32-emscripten -Doptimize=fast run
+# Serve without opening a browser:
+zig build -Dtarget=wasm32-emscripten -Doptimize=fast run -- --no_browser
+```
+
+The web build is installed to `zig-out/web/index.html`. Serve the entire
+`zig-out/web` directory, including `index.js`, `index.wasm`, `index.data`, and
+`coi-serviceworker.js`. The data file contains the game's levels, sprites,
+fonts, and sounds. The service worker supplies cross-origin isolation for
+pthreads on localhost or HTTPS.
+
+`debug`, `safe`, `fast`, and `small` are the optimization modes. Build outputs
+and downloaded SDK files are ignored by Git.
 
 ## How it Works
 

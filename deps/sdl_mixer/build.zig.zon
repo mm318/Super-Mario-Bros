@@ -1,0 +1,10 @@
+.{
+    .name = .mario_sdl_mixer,
+    .fingerprint = 0x6bff0ab72ec0df4c,
+    .version = "2.8.0",
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .sdl = .{ .path = "../sdl" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "include", "LICENSE.txt", "VENDORED.md" },
+}

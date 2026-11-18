@@ -1,0 +1,17 @@
+.{
+    .name = .super_mario_bros,
+    .fingerprint = 0xc4c2702934b07129,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .emsdk = .{
+            .url = "git+https://github.com/emscripten-core/emsdk?ref=7.0.0#708dcbcc9ee23bc7d2dad44fc90db377e38b771c",
+            .hash = "N-V-__8AAFtICgCVOQFfkjwy7ir3VqTXKBIfbrfoKDuqstpy",
+        },
+        .sdl = .{ .path = "deps/sdl" },
+        .sdl_image = .{ .path = "deps/sdl_image" },
+        .sdl_mixer = .{ .path = "deps/sdl_mixer" },
+        .sdl_ttf = .{ .path = "deps/sdl_ttf" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "include", "deps", "res", "web_assets", "README.md", "LICENSE" },
+}

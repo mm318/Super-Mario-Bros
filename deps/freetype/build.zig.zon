@@ -1,0 +1,8 @@
+.{
+    .name = .mario_freetype,
+    .fingerprint = 0x9e14653d62b04058,
+    .version = "2.15.0",
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{},
+    .paths = .{ "build.zig", "build.zig.zon", "src", "include", "docs", "LICENSE.TXT", "VENDORED.md" },
+}

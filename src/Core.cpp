@@ -42,11 +42,15 @@ void Core::run() {
 }
 
 void Core::mainLoop() {
+#ifndef __EMSCRIPTEN__
    Uint64 startTicks = SDL_GetTicks64();
+#endif
    game.handleInput();
    game.update();
    CommandScheduler::getInstance().run();
+#ifndef __EMSCRIPTEN__
    limitFPS(startTicks);
+#endif
    std::cout << std::flush;
 }
 

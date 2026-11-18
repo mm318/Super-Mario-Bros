@@ -1,9 +1,5 @@
 #include "TextureManager.h"
 
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#endif
-
 #include "Constants.h"
 
 #include <SDL2/SDL.h>
@@ -19,7 +15,7 @@ int TextureManager::Init() {
       std::cerr << "Failed to Initialize SDL2: " << SDL_GetError() << std::endl;
       return -1;
    }
-   if (IMG_Init(IMG_INIT_PNG) < 0) {
+   if ((IMG_Init(IMG_INIT_PNG) & IMG_INIT_PNG) == 0) {
       std::cerr << "Failed to Initialize SDL2_IMG: " << SDL_GetError() << std::endl;
       return -1;
    }
@@ -183,19 +179,12 @@ void TextureManager::Display() {
    SDL_RenderPresent(renderer);
 }
 
-#ifdef __EMSCRIPTEN__
-EM_JS(int, get_canvas_width, (), { return canvas.width; });
-EM_JS(int, get_canvas_height, (), { return canvas.height; });
-#endif
-
 void TextureManager::ResizeWindow() {
-#ifdef __EMSCRIPTEN__
-   int windowWidth = get_canvas_width();
-   int windowHeight = get_canvas_height();
-#else
-   int windowWidth = SDL_GetWindowSurface(window)->w;
-   int windowHeight = SDL_GetWindowSurface(window)->h;
-#endif
+   int windowWidth;
+   int windowHeight;
+   if (SDL_GetRendererOutputSize(renderer, &windowWidth, &windowHeight) != 0) {
+      return;
+   }
    float scaleWidth = (float)((float)windowWidth / (float)SCREEN_WIDTH);
    float scaleHeight = (float)((float)windowHeight / (float)SCREEN_HEIGHT);
 

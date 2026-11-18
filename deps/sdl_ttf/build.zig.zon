@@ -1,0 +1,11 @@
+.{
+    .name = .mario_sdl_ttf,
+    .fingerprint = 0x4c0f0d037e2c024b,
+    .version = "2.24.0",
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .sdl = .{ .path = "../sdl" },
+        .freetype = .{ .path = "../freetype" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "SDL_ttf.c", "SDL_ttf.h", "LICENSE.txt", "CHANGES.txt", "VENDORED.md" },
+}

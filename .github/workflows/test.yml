@@ -1,0 +1,37 @@
+name: Test Build
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - target: native
+            optimize: debug
+          - target: native
+            optimize: safe
+          - target: wasm32-emscripten
+            optimize: debug
+          - target: wasm32-emscripten
+            optimize: fast
+    steps:
+      - uses: actions/checkout@v4
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: 0.17.1
+      - name: Install native dependencies
+        if: matrix.target == 'native'
+        run: |
+          sudo apt update
+          sudo apt install -y libxext-dev libgles-dev libglx-dev libpulse-dev
+      - name: Install Emscripten 7.0.0
+        if: matrix.target == 'wasm32-emscripten'
+        run: zig build install-emsdk
+      - name: Check build formatting
+        run: zig fmt --check build.zig build.zig.zon deps/sdl/build.zig deps/sdl/build.zig.zon deps/sdl_image/build.zig deps/sdl_image/build.zig.zon deps/sdl_mixer/build.zig deps/sdl_mixer/build.zig.zon deps/sdl_ttf/build.zig deps/sdl_ttf/build.zig.zon deps/freetype/build.zig deps/freetype/build.zig.zon
+      - name: Build game
+        run: zig build -Dtarget=${{ matrix.target }} -Doptimize=${{ matrix.optimize }}
