@@ -24,7 +24,7 @@ bool shellRecovered(const Body& shell, float& remaining, float dt, const Rules& 
    else remaining -= dt;
    return remaining <= 0;
 }
-template<class T> void tuckKoopa(T& koopa, const Rules& rules) {
+void tuckKoopa(Enemy& koopa, const Rules& rules) {
    if (!koopa.shell) koopa.shellRecycles = 0;
    koopa.shell = true; koopa.vx = 0; koopa.vy = -160; koopa.grounded = false;
    koopa.recovery = rules.shellRecoverySeconds;
@@ -36,7 +36,7 @@ int kickDirection(const Body& body, const Player& player) {
    if (dx < -width / 2) dx += width;
    return std::abs(dx) < 6 ? player.facing : (dx > 0 ? 1 : -1);
 }
-template<class T> void kickKoopa(T& koopa, const Player& player, int index, const Rules& rules) {
+void kickKoopa(Enemy& koopa, const Player& player, int index, const Rules& rules) {
    koopa.direction = kickDirection(koopa, player);
    koopa.vx = koopa.direction * rules.shellSpeed;
    koopa.recovery = rules.shellRecoverySeconds;
@@ -89,8 +89,6 @@ void BattleGame::resetRound() {
       if (tile < 10 || tile >= 15) segments.push_back({tile * 32.f, 344});
    }
    segments[static_cast<unsigned>(range(0, static_cast<float>(segments.size())))].hiddenItem = true;
-   koopa = {}; koopa.alive = false; koopaPending = true;
-   koopaTimer = rules.koopaSpawnSeconds;
    powCharges = 3; powTimer = 0;
    phase = Phase::Ready; winner = -1; coinVictory = false;
    readyTimer = rules.readySeconds; shake = 0;
@@ -104,7 +102,9 @@ void BattleGame::emit(EventType type, float x, float y, int player) {
 void BattleGame::spawnEnemy() {
    const auto choices = roster(round);
    Enemy e;
-   e.type = choices[std::uniform_int_distribution<unsigned>(0, choices.size() - 1)(random)];
+   e.type = std::bernoulli_distribution(rules.walkingKoopaChance)(random) ? EnemyType::WalkingKoopa :
+      choices[std::uniform_int_distribution<unsigned>(0, choices.size() - 1)(random)];
+   e.winged = e.type == EnemyType::FlyingKoopa;
    emergeFromPipe(e, nextPipeRight);
    nextPipeRight = !nextPipeRight;
    e.hop = range(.5f, 1.4f);
@@ -189,7 +189,7 @@ void BattleGame::updatePlayer(int index, const Input& in, float dt) {
 }
 void BattleGame::hitEnemy(Enemy& e, bool pow) {
    if (!e.alive || (!pow && !e.grounded)) return;
-   if (e.type == EnemyType::FlyingKoopa) {
+   if (e.isKoopa()) {
       e.winged = e.stunned = false;
       tuckKoopa(e, rules);
       emit(EventType::Stun, e.x, e.y);
@@ -248,9 +248,6 @@ void BattleGame::bumpSegment(unsigned index, int player) {
    for (auto& e : enemies)
       if (e.grounded && std::abs(e.y - s.y) < 2 && e.x + 13 > s.x && e.x - 13 < s.x + 32)
          hitEnemy(e);
-   if (koopa.alive && koopa.grounded && std::abs(koopa.y - s.y) < 2 && std::abs(koopa.x - s.x - 16) < 28) {
-      tuckKoopa(koopa, rules);
-   }
    const int other = 1 - player;
    if (players[other].grounded && std::abs(players[other].y - s.y) < 2 && std::abs(players[other].x - s.x - 16) < 27) {
       stunPlayer(other, rules.platformStunSeconds, false);
@@ -268,10 +265,6 @@ void BattleGame::activatePow(int player) {
    if (powCharges <= 0) return;
    --powCharges;
    for (auto& e : enemies) hitEnemy(e, true);
-   if (koopa.alive) {
-      tuckKoopa(koopa, rules);
-      emit(EventType::Stun, koopa.x, koopa.y);
-   }
    boos.clear(); shake = .4f;
    emit(EventType::Pow, 400, 360, player);
    if (!powCharges) powTimer = range(rules.powRespawnMin, rules.powRespawnMax);
@@ -283,15 +276,18 @@ void BattleGame::updateEnemies(float dt) {
       e.touchGrace = std::max(0.f, e.touchGrace - dt);
       if (e.stunned) {
          e.vx = 0;
-         if (e.type != EnemyType::FlyingKoopa) {
+         if (!e.isKoopa()) {
             e.recovery -= dt;
             if (e.recovery <= 0) { e.stunned = e.shell = false; ++e.speedLevel; }
          }
       }
       if (!e.stunned && !e.shell) {
-         const float speed = e.type == EnemyType::FlyingKoopa ? rules.flyingKoopaSpeed :
+         const float speed = e.type == EnemyType::WalkingKoopa ? rules.koopaSpeed :
+                             e.type == EnemyType::FlyingKoopa ? rules.flyingKoopaSpeed :
                              e.type == EnemyType::BuzzyBeetle ? rules.buzzyBeetleSpeed : rules.spinySpeed;
-         e.vx = e.direction * speed * (1 + rules.recoverySpeedGain * std::min(e.speedLevel, 6));
+         const int level = std::min(e.speedLevel, 6);
+         e.vx = e.direction * (e.type == EnemyType::WalkingKoopa ? speed + rules.koopaRecoverySpeedGain * level :
+                              speed * (1 + rules.recoverySpeedGain * level));
          if (e.type == EnemyType::FlyingKoopa && e.winged && e.grounded) {
             e.hop -= dt;
             if (e.hop <= 0) {
@@ -300,35 +296,20 @@ void BattleGame::updateEnemies(float dt) {
             }
          }
       }
-      moveBody(e, 11, dt);
-      if (e.type == EnemyType::FlyingKoopa && (e.stunned || e.shell) && shellRecovered(e, e.recovery, dt, rules)) {
+      moveBody(e, e.type == EnemyType::WalkingKoopa ? 12 : 11, dt);
+      if (e.isKoopa() && (e.stunned || e.shell) && shellRecovered(e, e.recovery, dt, rules)) {
          e.stunned = e.shell = false; ++e.speedLevel;
       }
       if (e.grounded && e.y == floorY && (e.x < 58 || e.x > 742)) {
-         if (e.type == EnemyType::FlyingKoopa && e.shell && std::abs(e.vx) > .01f) {
+         if (e.isKoopa() && e.shell && std::abs(e.vx) > .01f) {
             if (e.shellRecycles >= 1) {
-               e.alive = false; spawnItem(ItemType::Coin); continue;
+               e.alive = false;
+               if (e.type == EnemyType::FlyingKoopa) spawnItem(ItemType::Coin);
+               continue;
             }
             ++e.shellRecycles;
          }
          emergeFromPipe(e, e.direction < 0);
-      }
-   }
-   if (koopa.alive) {
-      koopa.touchGrace = std::max(0.f, koopa.touchGrace - dt);
-      if (!koopa.shell) koopa.vx = koopa.direction * (rules.koopaSpeed + rules.koopaRecoverySpeedGain * std::min(koopa.speedLevel, 6));
-      moveBody(koopa, 12, dt);
-      if (koopa.shell && shellRecovered(koopa, koopa.recovery, dt, rules)) {
-         koopa.shell = false; ++koopa.speedLevel;
-      }
-      if (koopa.grounded && koopa.y == floorY && (koopa.x < 58 || koopa.x > 742)) {
-         if (koopa.shell && std::abs(koopa.vx) > .01f) {
-            if (koopa.shellRecycles >= 1) koopa.alive = false;
-            else ++koopa.shellRecycles;
-         }
-         if (koopa.alive) {
-            emergeFromPipe(koopa, koopa.direction < 0);
-         }
       }
    }
    const auto tossEnemies = [&](const Body& shell, const Enemy* source) {
@@ -339,8 +320,7 @@ void BattleGame::updateEnemies(float dt) {
          }
       }
    };
-   if (koopa.alive && koopa.shell && std::abs(koopa.vx) > .01f) tossEnemies(koopa, nullptr);
-   for (const auto& e : enemies) if (e.alive && e.type == EnemyType::FlyingKoopa && e.shell && std::abs(e.vx) > .01f) tossEnemies(e, &e);
+   for (const auto& e : enemies) if (e.alive && e.isKoopa() && e.shell && std::abs(e.vx) > .01f) tossEnemies(e, &e);
 }
 void BattleGame::updateItems(float dt) {
    for (auto& item : items) {
@@ -448,23 +428,25 @@ void BattleGame::collisions(float dt, const std::array<Player, 2>& previous) {
       auto& p = players[i];
       for (auto& e : enemies) {
          if (!e.alive || (e.touchGrace > 0 && e.lastPlayer == i)) continue;
-         const bool koopaShell = e.type == EnemyType::FlyingKoopa && e.shell;
+         const bool koopaShell = e.isKoopa() && e.shell;
          const bool stoppedShell = koopaShell && std::abs(e.vx) <= .01f;
-         if (!overlap(p, stoppedShell ? 30 : 22, p.height(), e, stoppedShell ? 36 : 27, e.height())) continue;
-         const float top = e.y - (e.type == EnemyType::FlyingKoopa && !e.shell ? 32 : 27);
+         const bool walkingKoopa = e.type == EnemyType::WalkingKoopa;
+         if (!overlap(p, stoppedShell ? 30 : walkingKoopa ? 24 : 22, p.height(), e,
+                      stoppedShell ? 36 : walkingKoopa ? 28 : 27, e.height())) continue;
+         const float top = e.y - (e.isKoopa() && !e.shell ? 32 : 27);
          const bool stomp = p.vy > 0 && p.y - p.vy * dt <= top + 10;
          if (e.type == EnemyType::BuzzyBeetle && stomp) {
             if (e.stunned) { e.stunned = e.shell = false; e.recovery = 0; ++e.speedLevel; }
             e.touchGrace = rules.shellKickGrace; e.lastPlayer = i;
             bouncePlayer(i, top);
             emit(EventType::Stun, e.x, e.y, i);
-         } else if (e.type == EnemyType::FlyingKoopa) {
+         } else if (e.isKoopa()) {
             if (e.shell && (stomp || stoppedShell)) {
                kickKoopa(e, p, i, rules);
                if (stomp) bouncePlayer(i, top);
                emit(EventType::Kick, e.x, e.y, i);
             } else if (stomp) {
-               if (e.winged) e.winged = false;
+               if (e.type == EnemyType::FlyingKoopa && e.winged) e.winged = false;
                else tuckKoopa(e, rules);
                e.touchGrace = rules.shellKickGrace; e.lastPlayer = i;
                bouncePlayer(i, top);
@@ -476,23 +458,6 @@ void BattleGame::collisions(float dt, const std::array<Player, 2>& previous) {
          if (phase != Phase::Playing) break;
       }
       if (phase != Phase::Playing) break;
-      if (koopa.alive && !(koopa.touchGrace > 0 && koopa.lastPlayer == i)) {
-         const bool stoppedShell = koopa.shell && std::abs(koopa.vx) <= .01f;
-         if (overlap(p, stoppedShell ? 30 : 24, p.height(), koopa, stoppedShell ? 36 : 28, koopa.shell ? 27 : 40)) {
-            const float top = koopa.y - (koopa.shell ? 27 : 32);
-            const bool stomp = p.vy > 0 && p.y - p.vy * dt <= top + 10;
-            if (koopa.shell && (stomp || stoppedShell)) {
-               kickKoopa(koopa, p, i, rules);
-               if (stomp) bouncePlayer(i, top);
-               emit(EventType::Kick, koopa.x, koopa.y, i);
-            } else if (stomp) {
-               tuckKoopa(koopa, rules);
-               koopa.touchGrace = rules.shellKickGrace; koopa.lastPlayer = i;
-               bouncePlayer(i, top);
-               emit(EventType::Stun, koopa.x, koopa.y, i);
-            } else hurtPlayer(i);
-         }
-      }
       for (const auto& boo : boos)
          if (overlap(p, 20, p.height(), boo, 26, 28)) hurtPlayer(i);
    }
@@ -568,13 +533,6 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
    if (enemyTimer <= 0) {
       if (static_cast<int>(enemies.size()) < rules.enemyLimit) spawnEnemy();
       enemyTimer = rules.enemySpawnSeconds;
-   }
-   if (koopaPending) {
-      koopaTimer -= dt;
-      if (koopaTimer <= 0) {
-         koopa = {}; emergeFromPipe(koopa, nextPipeRight);
-         nextPipeRight = !nextPipeRight; koopaPending = false;
-      }
    }
    if (booTimer <= 0) {
       Boo boo; boo.x = 64; boo.baseY = range(180, 365); boo.y = 144;

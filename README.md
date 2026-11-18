@@ -12,8 +12,8 @@ background, HUD, menus, status indicators and particles are drawn in code.
 Defeat enemies to create **shared coins**, race to collect five, or eliminate the
 other player. Win five rounds to earn a match star. There is one fixed, wrapping
 arena, continuous enemy replenishment, and no campaign or bonus stages. Every
-round starts empty: after the ready countdown, regular enemies enter through
-upper pipes every 2.8 seconds, the arena Koopa arrives after 5.6 seconds, and
+round starts empty: after the ready countdown, enemies enter through
+upper pipes every 2.8 seconds, with a 7% chance of a walking green Koopa, and
 Lakitu/Boo hazards begin entering from the left upper pipe after 14 seconds.
 
 ## Play
@@ -61,16 +61,16 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
   test mode. A `STUN` label marks the affected player.
 - Both players start every round Super. Damage makes them Small, with brief
   invulnerability; another hit eliminates them and immediately awards the round.
-- The arena's original green Koopa follows the same shell rules but never awards
+- Walking green Koopas follow the same shell rules but never award
   coins. Moving shells toss other regular enemies without killing them. All
   Koopa shells recover only after remaining completely stopped on a platform or
   floor for nine seconds; movement restarts the timer.
 - Moving Koopa shells re-emerge after their first lower-pipe entry, then disappear
   into a lower pipe on their next entry. Re-kicking or POW does not reset this
   limit. A regular flying Koopa generates a shared coin when it disappears;
-  the arena Koopa stays gone until the next round and generates no coin.
+  a walking green Koopa generates no coin. New walking Koopas can spawn afterward.
 - The central POW overturns Spinies and beetles, retracts all Koopas (including
-  the arena Koopa and airborne ones), stops moving shells, and clears Boos.
+  walking and airborne ones), stops moving shells, and clears Boos.
   It has three charges and returns after a random delay once exhausted.
 - Mushrooms restore Super size. Swap mushrooms exchange player positions when
   sizes match, or exchange their sizes when they differ. Both use the unmodified
@@ -91,7 +91,10 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
 | 8 | Buzzy Beetle, Flying Koopa |
 | 9 | Spiny, Buzzy Beetle, Flying Koopa |
 
-Every round also has the single arena Koopa and recurring Lakitu/Boo hazards.
+In every round, each enemy spawn has a 7% chance of being a walking green Koopa;
+the remaining 93% uses that round's roster above. Walkers share the five-enemy
+arena limit and can spawn repeatedly, including after earlier ones disappear.
+Lakitu/Boo hazards recur separately in every round.
 
 Stars are stored in SDL's application preferences directory under
 `SuperMarioBros/BattleGame/stars.txt` on desktop and in this browser origin's
@@ -158,7 +161,8 @@ music, and Windows icon/resource script. Campaign level data, screenshots,
 menu artwork, tile mappings and unused audio have been removed.
 
 Tests cover five-coin wins, five-to-nine-round matches, star rollover, all nine
-rosters, empty round starts and delayed pipe entrances, enemy state transitions, solid platform head/side collisions and edge
+rosters, 7% walking-Koopa spawn frequency in every round, recurring walkers and the
+shared enemy cap, empty round starts and delayed pipe entrances, enemy state transitions, solid platform head/side collisions and edge
 climbing in both player sizes, jump/bump/kick behavior, contested
 coins, damage, both ? Mushroom cases, POW exhaustion/regeneration, spawning,
 Buzzy Beetle immunity/revival/finishing kicks, Koopa wing removal, POW effects,

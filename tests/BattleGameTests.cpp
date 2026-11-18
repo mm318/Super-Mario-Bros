@@ -10,10 +10,14 @@ void tick(BattleGame& g, float seconds, std::array<Input,2> in={}) {
    for (int i=0;i<static_cast<int>(seconds/dt);++i) g.step(dt,in);
 }
 BattleGame quiet() {
-   Rules r; r.enemySpawnSeconds=r.booSpawnSeconds=r.itemSpawnSeconds=r.koopaSpawnSeconds=10000;
+   Rules r; r.enemySpawnSeconds=r.booSpawnSeconds=r.itemSpawnSeconds=10000;
    BattleGame g(42,r); g.phase=Phase::Playing; g.enemies.clear();
-   g.koopa.alive=true; g.koopa.x=750; g.koopa.y=144;
    return g;
+}
+Enemy& addKoopa(BattleGame& g, EnemyType type=EnemyType::WalkingKoopa) {
+   Enemy e; e.type=type; e.winged=false;
+   g.enemies.push_back(e);
+   return g.enemies.back();
 }
 unsigned tileAt(const BattleGame& g,float x,float y) {
    for (unsigned i=0;i<g.segments.size();++i) if (g.segments[i].x==x && g.segments[i].y==y) return i;
@@ -54,11 +58,35 @@ void rosters() {
    for (int r=1;r<=9;++r) {
       CHECK(BattleGame::roster(r)==expected[r-1]);
       auto g=quiet(); g.round=r;
-      for (int i=0;i<25;++i) {
+      int walkers=0;
+      for (int i=0;i<10000;++i) {
+         g.enemies.clear();
          g.spawnEnemy();
          const auto t=g.enemies.back().type;
-         bool valid=false; for (auto e:expected[r-1]) valid|=e==t; CHECK(valid);
+         if (t==E::WalkingKoopa) { ++walkers; CHECK(!g.enemies.back().winged); }
+         else { bool valid=false; for (auto e:expected[r-1]) valid|=e==t; CHECK(valid); }
       }
+      CHECK(walkers>600 && walkers<800); // Approximately 7% in every round.
+      g.rules.walkingKoopaChance=0;
+      for (int i=0;i<100;++i) { g.enemies.clear(); g.spawnEnemy(); CHECK(g.enemies.back().type!=E::WalkingKoopa); }
+   }
+}
+void recurringWalkingKoopas() {
+   Rules r; r.enemySpawnSeconds=.05f; r.walkingKoopaChance=1;
+   r.booSpawnSeconds=r.itemSpawnSeconds=10000;
+   for (int round=1;round<=9;++round) {
+      BattleGame g(round,r); g.round=round; g.phase=Phase::Playing;
+      for (int frame=0;frame<120 && static_cast<int>(g.enemies.size())<r.enemyLimit;++frame) g.step(dt,{});
+      CHECK(static_cast<int>(g.enemies.size())==r.enemyLimit);
+      for (const auto& e:g.enemies) CHECK(e.type==EnemyType::WalkingKoopa && !e.winged && !e.shell && e.grounded && e.y==144);
+      // Retire a moving shell at its second pipe entry, then replenish the slot.
+      auto& shell=g.enemies.front(); shell.shell=true; shell.shellRecycles=1;
+      shell.x=742; shell.y=floorY; shell.vx=r.shellSpeed; shell.direction=1;
+      g.step(dt,{});
+      CHECK(static_cast<int>(g.enemies.size())==r.enemyLimit-1 && g.items.empty());
+      tick(g,.1f);
+      CHECK(static_cast<int>(g.enemies.size())==r.enemyLimit);
+      CHECK(g.enemies.back().type==EnemyType::WalkingKoopa && !g.enemies.back().winged);
    }
 }
 void enemyStates() {
@@ -135,10 +163,10 @@ void solidPlatforms() {
    std::array<Input,2> in{}; in[0].jump=true; tick(g,.6f,in);
    CHECK(g.powCharges==2 && g.players[0].grounded && g.players[0].y==floorY);
    // A Koopa bounce must not snap the player's head inside a low brick ceiling.
-   g=quiet(); g.koopa.x=200; g.koopa.y=floorY; g.koopa.grounded=true;
+   g=quiet(); auto& koopa=addKoopa(g); koopa.x=200; koopa.y=floorY; koopa.grounded=true;
    g.players[0].x=200; g.players[0].y=424; g.players[0].vy=100;
    g.step(dt,{});
-   CHECK(g.koopa.shell && g.players[0].y-g.players[0].height()>=344+platformThickness);
+   CHECK(koopa.shell && g.players[0].y-g.players[0].height()>=344+platformThickness);
    // Rival contact during a jump cannot push someone through a brick side.
    g=quiet(); g.players[0].x=331; g.players[1].x=352;
    for (auto& p:g.players) { p.y=370; p.vy=-100; p.grounded=false; }
@@ -163,7 +191,7 @@ void powAndReplenishment() {
    auto g=quiet(); g.rules.powRespawnMin=g.rules.powRespawnMax=.1f;
    Enemy e; e.type=EnemyType::FlyingKoopa; e.x=200; e.y=144; g.enemies.push_back(e);
    g.boos.push_back({}); g.activatePow(0);
-   CHECK(g.powCharges==2 && g.boos.empty() && g.enemies[0].shell && !g.enemies[0].winged && g.koopa.shell);
+   CHECK(g.powCharges==2 && g.boos.empty() && g.enemies[0].shell && !g.enemies[0].winged);
    g.activatePow(1); g.activatePow(0); CHECK(g.powCharges==0);
    tick(g,.2f); CHECK(g.powCharges==3);
    g=quiet(); g.rules.enemySpawnSeconds=.1f; tick(g,.2f);
@@ -175,14 +203,14 @@ void powAndReplenishment() {
 }
 void shellsAndMovement() {
    auto g=quiet();
-   g.koopa.x=200; g.koopa.y=344; g.koopa.grounded=true;
+   auto& koopa=addKoopa(g); koopa.x=200; koopa.y=344; koopa.grounded=true;
    g.players[0].x=200; g.players[0].y=301; g.players[0].vy=220;
-   tick(g,.08f); CHECK(g.koopa.shell && g.players[0].super);
-   g=quiet(); g.koopa.shell=true; g.koopa.recovery=8; g.koopa.x=214; g.koopa.y=448;
-   g.players[0].x=190; g.step(dt,{}); CHECK(g.koopa.vx>100 && g.items.empty());
-   Enemy e; e.x=g.koopa.x+20; e.y=g.koopa.y; e.grounded=true; g.enemies.push_back(e);
+   tick(g,.08f); CHECK(koopa.shell && g.players[0].super);
+   g=quiet(); auto& shell=addKoopa(g); shell.shell=true; shell.recovery=8; shell.x=214; shell.y=448;
+   g.players[0].x=190; g.step(dt,{}); CHECK(shell.vx>100 && g.items.empty());
+   Enemy e; e.x=shell.x+20; e.y=shell.y; e.grounded=true; g.enemies.push_back(e);
    g.players[0].x=500; tick(g,.05f);
-   CHECK(g.enemies.size()==1 && g.enemies[0].vy<0 && g.items.empty());
+   CHECK(g.enemies.size()==2 && g.enemies[1].vy<0 && g.items.empty());
    g=quiet(); g.players[0].x=799; std::array<Input,2> input{}; input[0].right=true; input[1].left=true;
    tick(g,.3f,input); CHECK(g.players[0].x<100 && g.players[1].x<615);
    auto shortJump=quiet(), longJump=quiet(); input={}; input[0].jump=true;
@@ -192,9 +220,8 @@ void shellsAndMovement() {
    input[0].jump=true; tick(longJump,.2f,input); CHECK(longJump.players[0].y<shortJump.players[0].y);
 }
 void stoppedShellRecovery() {
-   // Exercise the identical rest-only recovery rule for the arena Koopa and
-   // every regular flying Koopa after it loses its wings.
-   for (bool regular : {false,true}) {
+   // Walking and de-winged flying Koopas share the rest-only recovery rule.
+   for (auto type : {EnemyType::WalkingKoopa,EnemyType::FlyingKoopa}) {
       auto g=quiet(); g.rules.shellRecoverySeconds=.2f;
       for (auto& p:g.players) p.invulnerable=1000;
       const auto check=[&](auto& shell) {
@@ -212,10 +239,7 @@ void stoppedShellRecovery() {
          shell.grounded=false; shell.recovery=.01f;
          tick(g,.1f); CHECK(shell.shell && shell.recovery>.19f);
       };
-      if (regular) {
-         Enemy e; e.type=EnemyType::FlyingKoopa; e.winged=false;
-         g.enemies.push_back(e); check(g.enemies.front());
-      } else check(g.koopa);
+      check(addKoopa(g,type));
    }
 }
 void flyingKoopas() {
@@ -271,21 +295,19 @@ void buzzyBeetles() {
 }
 void powHitsAllKoopas() {
    auto g=quiet();
-   g.koopa.shell=true; g.koopa.shellRecycles=1; g.koopa.vx=350;
-   for (int state=0;state<3;++state) {
-      Enemy e; e.type=EnemyType::FlyingKoopa; e.x=200+state*100; e.y=144;
-      e.winged=state==0; e.shell=state==2; e.vx=state==2?350:0;
+   for (auto type : {EnemyType::WalkingKoopa,EnemyType::FlyingKoopa}) for (int state=0;state<3;++state) {
+      Enemy e; e.type=type; e.x=200+state*100; e.y=144;
+      e.winged=type==EnemyType::FlyingKoopa && state==0; e.shell=state==2; e.vx=state==2?350:0;
       e.shellRecycles=state==2?1:0; g.enemies.push_back(e);
    }
    g.activatePow(0);
-   CHECK(g.koopa.shell && g.koopa.vx==0 && g.koopa.vy<0 && g.koopa.shellRecycles==1);
    for(const auto& e:g.enemies) CHECK(e.shell && !e.winged && !e.stunned && e.vx==0 && e.vy<0);
-   CHECK(g.enemies[2].shellRecycles==1 && g.items.empty());
-   // The walking arena Koopa is affected as well.
-   g.koopa.shell=false; g.activatePow(1); CHECK(g.koopa.shell && g.koopa.shellRecycles==0);
+   CHECK(g.enemies[2].shellRecycles==1 && g.enemies[5].shellRecycles==1 && g.items.empty());
+   g.enemies[0].shell=false; g.activatePow(1);
+   CHECK(g.enemies[0].shell && g.enemies[0].shellRecycles==0);
 }
 void sensitiveShellKicks() {
-   for (bool regular : {false,true}) {
+   for (auto type : {EnemyType::WalkingKoopa,EnemyType::FlyingKoopa}) {
       auto g=quiet();
       const auto check=[&](auto& shell) {
          shell.shell=true; shell.x=400; shell.y=240; shell.vx=shell.vy=0;
@@ -302,38 +324,30 @@ void sensitiveShellKicks() {
          g.players[1].x=600; tick(g,.05f);
          CHECK(shell.shell && std::abs(shell.vx)==g.rules.shellSpeed && g.players[0].super);
       };
-      if (regular) {
-         Enemy e; e.type=EnemyType::FlyingKoopa; e.winged=false;
-         g.enemies.push_back(e); check(g.enemies.front());
-      } else check(g.koopa);
+      check(addKoopa(g,type));
    }
 }
 void shellPipeLimit() {
-   for (bool regular : {false,true}) {
+   for (auto type : {EnemyType::WalkingKoopa,EnemyType::FlyingKoopa}) {
       auto g=quiet();
-      if (regular) { Enemy e; e.type=EnemyType::FlyingKoopa; e.winged=false; g.enemies.push_back(e); }
+      addKoopa(g,type);
       const auto enter=[&](auto& shell) {
          shell.shell=true; shell.x=742; shell.y=floorY; shell.vx=350; shell.vy=0;
          shell.direction=1; shell.grounded=true; shell.recovery=9;
          shell.touchGrace=0; g.step(dt,{});
       };
-      if (regular) enter(g.enemies[0]); else enter(g.koopa);
-      if (regular) CHECK(g.enemies.size()==1 && g.enemies[0].shellRecycles==1 && g.enemies[0].y==144);
-      else CHECK(g.koopa.alive && g.koopa.shellRecycles==1 && g.koopa.y==144);
+      enter(g.enemies[0]);
+      CHECK(g.enemies.size()==1 && g.enemies[0].shellRecycles==1 && g.enemies[0].y==144);
       // Kicking again doesn't restart the shell's pipe lifetime.
       const auto rekick=[&](auto& shell) {
          shell.x=400; shell.y=240; shell.vx=shell.vy=0; shell.grounded=true;
          g.players[0].x=368; g.players[0].y=240;
          g.step(dt,{}); CHECK(shell.shellRecycles==1 && shell.vx>0);
       };
-      if (regular) rekick(g.enemies[0]); else rekick(g.koopa);
-      if (regular) enter(g.enemies[0]); else enter(g.koopa);
-      if (regular) CHECK(g.enemies.empty() && g.items.size()==1 && g.players[0].coins==0);
-      else {
-         CHECK(!g.koopa.alive && g.items.empty());
-         g.activatePow(0); CHECK(!g.koopa.alive);
-      }
-      g.startMatch(); CHECK(!g.koopa.alive && !g.koopa.shell && g.koopa.shellRecycles==0);
+      rekick(g.enemies[0]); enter(g.enemies[0]);
+      CHECK(g.enemies.empty() && g.items.size()==(type==EnemyType::FlyingKoopa?1u:0u) && g.players[0].coins==0);
+      g.activatePow(0); CHECK(g.enemies.empty());
+      g.startMatch(); CHECK(g.enemies.empty());
    }
 }
 void defeatedEnemyFlight() {
@@ -385,8 +399,8 @@ void invinciblePlayersTestMode() {
          CHECK(p.super==super && !p.eliminated && p.invulnerable==0);
          Enemy enemy; enemy.x=p.x; enemy.y=floorY;
          g.enemies.push_back(enemy); g.step(dt,{}); g.enemies.clear();
-         g.koopa.shell=true; g.koopa.x=p.x-4; g.koopa.y=floorY;
-         g.koopa.vx=350; g.koopa.recovery=9; g.step(dt,{});
+         auto& shell=addKoopa(g); shell.shell=true; shell.x=p.x-4; shell.y=floorY;
+         shell.vx=350; shell.recovery=9; g.step(dt,{}); g.enemies.clear();
          Boo boo; boo.x=p.x; boo.y=436; boo.diagonal=true;
          g.boos.push_back(boo); g.step(dt,{}); g.boos.clear();
          CHECK(p.super==super && !p.eliminated && g.phase==Phase::Playing);
@@ -461,25 +475,24 @@ void platformPlayerStuns() {
 }
 void emptyRoundsAndPipeSpawns() {
    Rules rules; rules.readySeconds=.05f; rules.enemySpawnSeconds=.1f;
-   rules.koopaSpawnSeconds=.2f; rules.booSpawnSeconds=.3f; rules.itemSpawnSeconds=10000;
+   rules.booSpawnSeconds=.3f; rules.itemSpawnSeconds=10000;
    for (int round=1;round<=9;++round) {
       BattleGame g(round,rules); g.round=round;
-      CHECK(g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+      CHECK(g.enemies.empty() && g.boos.empty());
       tick(g,.08f); tick(g,.05f);
-      CHECK(g.phase==Phase::Playing && g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+      CHECK(g.phase==Phase::Playing && g.enemies.empty() && g.boos.empty());
       for (int frame=0;frame<30 && g.enemies.empty();++frame) g.step(dt,{});
-      CHECK(g.enemies.size()==1 && g.enemies[0].y==144 && !g.koopa.alive);
+      CHECK(g.enemies.size()==1 && g.enemies[0].y==144);
       CHECK((g.enemies[0].x==64 && g.enemies[0].direction==1) ||
             (g.enemies[0].x==736 && g.enemies[0].direction==-1));
-      for (int frame=0;frame<30 && !g.koopa.alive;++frame) g.step(dt,{});
-      CHECK(g.koopa.alive && g.koopa.y==144 && (g.koopa.x==64 || g.koopa.x==736));
+      for (int frame=0;frame<30 && g.enemies.size()<2;++frame) g.step(dt,{});
+      CHECK(g.enemies.size()==2 && g.enemies[1].y==144 && (g.enemies[1].x==64 || g.enemies[1].x==736));
       CHECK(g.boos.empty());
       for (int frame=0;frame<30 && g.boos.empty();++frame) g.step(dt,{});
       CHECK(g.boos.size()==1 && g.boos[0].x==64 && g.boos[0].y==144);
-      g.koopa.alive=false; tick(g,.3f); CHECK(!g.koopa.alive);
       g.phase=Phase::RoundOver; g.nextRound();
-      CHECK(g.enemies.empty() && !g.koopa.alive && g.boos.empty());
-      g.startMatch(); CHECK(g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+      CHECK(g.enemies.empty() && g.boos.empty());
+      g.startMatch(); CHECK(g.enemies.empty() && g.boos.empty());
    }
 }
 void tiesAndStress() {
@@ -509,7 +522,7 @@ void tiesAndStress() {
 }
 }
 int main() {
-   matchRules(); rosters(); enemyStates(); bumpAndKick(); solidPlatforms(); damageAndItems();
+   matchRules(); rosters(); recurringWalkingKoopas(); enemyStates(); bumpAndKick(); solidPlatforms(); damageAndItems();
    powAndReplenishment(); shellsAndMovement(); stoppedShellRecovery(); flyingKoopas(); buzzyBeetles();
    powHitsAllKoopas(); sensitiveShellKicks(); shellPipeLimit(); defeatedEnemyFlight();
    invinciblePlayersTestMode(); playerStompsAndStuns(); platformPlayerStuns();

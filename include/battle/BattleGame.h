@@ -15,7 +15,7 @@ struct Rules {
    float stunSeconds = 7, invulnerabilitySeconds = 1.8f;
    float stompStunSeconds = .5f, platformStunSeconds = 1;
    float enemySpawnSeconds = 2.8f, booSpawnSeconds = 14, itemSpawnSeconds = 17;
-   float koopaSpawnSeconds = 5.6f;
+   float walkingKoopaChance = .07f;
    float powRespawnMin = 16, powRespawnMax = 28, shellRecoverySeconds = 9;
    float coinSpeed = 105, readySeconds = 2.4f;
    float spinySpeed = 66, buzzyBeetleSpeed = 56, flyingKoopaSpeed = 66;
@@ -46,18 +46,14 @@ struct Player : Body {
    int coins = 0, facing = 1;
    float height() const { return crouched ? (super ? 28.f : 20.f) : (super ? 48.f : 28.f); }
 };
-enum class EnemyType { Spiny, BuzzyBeetle, FlyingKoopa };
+enum class EnemyType { Spiny, BuzzyBeetle, FlyingKoopa, WalkingKoopa };
 struct Enemy : Body {
    EnemyType type = EnemyType::Spiny;
    bool stunned = false, alive = true, winged = true, shell = false;
    int direction = 1, speedLevel = 0, shellRecycles = 0, lastPlayer = -1;
    float recovery = 0, hop = .8f, shellCooldown = 0, touchGrace = 0;
-   float height() const { return type == EnemyType::FlyingKoopa && !stunned && !shell ? 40.f : 27.f; }
-};
-struct Koopa : Body {
-   bool shell = false, alive = true;
-   int direction = 1, speedLevel = 0, shellRecycles = 0, lastPlayer = -1;
-   float recovery = 0, touchGrace = 0;
+   bool isKoopa() const { return type == EnemyType::FlyingKoopa || type == EnemyType::WalkingKoopa; }
+   float height() const { return isKoopa() && !stunned && !shell ? 40.f : 27.f; }
 };
 enum class ItemType { Coin, Mushroom, SwapMushroom };
 struct Item : Body {
@@ -100,7 +96,6 @@ public:
    std::vector<Enemy> defeatedEnemies;
    std::vector<Item> items;
    std::vector<Boo> boos;
-   Koopa koopa;
    std::vector<Event> events;
    Phase phase = Phase::Ready;
    int round = 1, winner = -1, powCharges = 3;
@@ -110,8 +105,6 @@ public:
 private:
    std::mt19937 random;
    float enemyTimer = 0, booTimer = 0, itemTimer = 0, powTimer = 0;
-   float koopaTimer = 0;
-   bool koopaPending = true;
    bool nextPipeRight = false, nextBooDiagonal = false;
    void resetRound();
    float range(float low, float high);

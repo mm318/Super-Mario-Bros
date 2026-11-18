@@ -214,13 +214,13 @@ void BattleScene::drawEnemy(const battle::Enemy& e) {
       sprite(enemyTexture.get(),enemySource(e.stunned?194:192+frame),{x-14,y-28,28,28},e.direction>0,false,e.alive);
    } else {
       const bool shell=e.stunned||e.shell;
-      const int id=shell?77:(e.winged?40:38)+frame;
-      const int height=shell?28:56;
+      const int id=shell?77:(e.type==battle::EnemyType::FlyingKoopa && e.winged?40:38)+frame;
+      const int height=shell?28:e.type==battle::EnemyType::WalkingKoopa?48:56;
       sprite(enemyTexture.get(),enemySource(id,shell?16:32),{x-14,y-height,28,height},e.direction>0,e.stunned,e.alive);
    }
    if (e.alive && e.stunned) {
       text(e.recovery<2 && static_cast<int>(animation*8)%2?"!":"*",x,y-42,10,gold,true);
-      rect(x-14,y+3,28,3,{45,51,66,255}); rect(x-14,y+3,static_cast<int>(28*e.recovery/(e.type==battle::EnemyType::FlyingKoopa?game.rules.shellRecoverySeconds:game.rules.stunSeconds)),3,gold);
+      rect(x-14,y+3,28,3,{45,51,66,255}); rect(x-14,y+3,static_cast<int>(28*e.recovery/(e.isKoopa()?game.rules.shellRecoverySeconds:game.rules.stunSeconds)),3,gold);
    }
 }
 void BattleScene::drawBoo(const battle::Boo& b) {
@@ -266,6 +266,7 @@ void BattleScene::drawHud() {
       if (!roster.empty()) roster+=" + ";
       roster+=t==battle::EnemyType::Spiny?"SPINY":t==battle::EnemyType::BuzzyBeetle?"BUZZY":"FLY KOOPA";
    }
+   roster+=" + GREEN KOOPA";
    text(roster,400,56,8,dim,true);
 }
 void BattleScene::drawPanel(const std::string& heading,SDL_Color accent) {
@@ -310,8 +311,6 @@ void BattleScene::render() {
    }
    for (const auto& i : game.items) drawItem(i);
    for (const auto& e : game.enemies) drawEnemy(e);
-   if (game.koopa.alive) sprite(enemyTexture.get(),enemySource(game.koopa.shell?77:38+static_cast<int>(animation*7)%2,game.koopa.shell?16:32),
-      {static_cast<int>(game.koopa.x)-14,static_cast<int>(game.koopa.y)-(game.koopa.shell?28:48),28,game.koopa.shell?28:48},game.koopa.direction>0);
    for (const auto& b : game.boos) drawBoo(b);
    drawPipe(0,80,false); drawPipe(736,80,true); drawPipe(0,384,false); drawPipe(736,384,true);
    for (int i=0;i<2;++i) drawPlayer(game.players[i],i);
