@@ -136,7 +136,7 @@ void BattleGame::updatePlayer(int index, const Input& in, float dt) {
    auto& p = players[index];
    p.invulnerable = std::max(0.f, p.invulnerable - dt);
    const bool stunned = p.stunTimer > 0;
-   p.crouched = p.forcedCrouchTimer > 0 || (!stunned && p.super && p.grounded && in.down);
+   p.crouched = p.super && (stunned || (p.grounded && in.down));
    const int direction = stunned ? 0 : static_cast<int>(in.right) - static_cast<int>(in.left);
    const float target = (p.crouched ? 0 : direction) * (in.dash ? rules.dashSpeed : rules.walkSpeed);
    p.vx = approach(p.vx, target, (direction ? rules.acceleration : rules.friction) * dt);
@@ -250,7 +250,7 @@ void BattleGame::bumpSegment(unsigned index, int player) {
          hitEnemy(e);
    const int other = 1 - player;
    if (players[other].grounded && std::abs(players[other].y - s.y) < 2 && std::abs(players[other].x - s.x - 16) < 27) {
-      stunPlayer(other, rules.platformStunSeconds, false);
+      stunPlayer(other, rules.platformStunSeconds);
       players[other].vy = -260; players[other].grounded = false;
    }
    if (s.hiddenItem) {
@@ -265,6 +265,7 @@ void BattleGame::activatePow(int player) {
    if (powCharges <= 0) return;
    --powCharges;
    for (auto& e : enemies) hitEnemy(e, true);
+   stunPlayer(1 - player, rules.powStunSeconds);
    boos.clear(); shake = .4f;
    emit(EventType::Pow, 400, 360, player);
    if (!powCharges) powTimer = range(rules.powRespawnMin, rules.powRespawnMax);
@@ -373,11 +374,10 @@ void BattleGame::updateBoos(float dt) {
 }
 void BattleGame::hurtPlayer(int index) {
    if (phase != Phase::Playing) return;
-   if (rules.invinciblePlayers) return;
    auto& p = players[index];
-   if (p.invulnerable > 0 || p.eliminated) return;
+   if (p.invulnerable > 0 || p.eliminated || (rules.invinciblePlayers && !p.super)) return;
    if (p.super) {
-      p.super = false; p.crouched = p.forcedCrouchTimer > 0; p.invulnerable = rules.invulnerabilitySeconds;
+      p.super = p.crouched = false; p.invulnerable = rules.invulnerabilitySeconds;
       p.vy = -190; p.grounded = false;
       emit(EventType::Hurt, p.x, p.y, index);
    } else {
@@ -392,7 +392,8 @@ void BattleGame::collectItem(Item& item, int index) {
       ++p.coins; emit(EventType::Coin, p.x, p.y - 32, index);
       if (p.coins >= Rules::coinsToWin) winRound(index, true);
    } else if (item.type == ItemType::Mushroom) {
-      p.super = true; emit(EventType::Mushroom, p.x, p.y, index);
+      p.super = true; p.crouched = p.stunTimer > 0;
+      emit(EventType::Mushroom, p.x, p.y, index);
    } else {
       auto& a = players[0]; auto& b = players[1];
       if (a.super == b.super) {
@@ -400,7 +401,7 @@ void BattleGame::collectItem(Item& item, int index) {
          std::swap(static_cast<Body&>(a), static_cast<Body&>(b));
       } else {
          std::swap(a.super, b.super);
-         a.crouched = a.forcedCrouchTimer > 0; b.crouched = b.forcedCrouchTimer > 0;
+         a.crouched = a.super && a.stunTimer > 0; b.crouched = b.super && b.stunTimer > 0;
       }
       emit(EventType::Swap, p.x, p.y, index);
    }
@@ -462,11 +463,10 @@ void BattleGame::collisions(float dt, const std::array<Player, 2>& previous) {
          if (overlap(p, 20, p.height(), boo, 26, 28)) hurtPlayer(i);
    }
 }
-void BattleGame::stunPlayer(int index, float seconds, bool crouch) {
+void BattleGame::stunPlayer(int index, float seconds) {
    auto& p = players[index];
    p.stunTimer = std::max(p.stunTimer, seconds);
-   if (crouch) p.forcedCrouchTimer = std::max(p.forcedCrouchTimer, seconds);
-   p.crouched = p.crouched || crouch; p.vx = 0;
+   p.crouched = p.super; p.vx = 0;
    emit(EventType::Stun, p.x, p.y, index);
 }
 void BattleGame::collidePlayers(const std::array<Player, 2>& previous) {
@@ -478,7 +478,7 @@ void BattleGame::collidePlayers(const std::array<Player, 2>& previous) {
       float dx = std::abs(a.x - b.x); dx = std::min(dx, width - dx);
       const bool descending = a.vy > 0 && a.y - previous[attacker].y > top - previousTop;
       if (descending && dx < 24 && previous[attacker].y <= previousTop + 2 && a.y >= top) {
-         stunPlayer(victim, rules.stompStunSeconds, true);
+         stunPlayer(victim, rules.stompStunSeconds);
          bouncePlayer(attacker, top);
          return;
       }
@@ -522,7 +522,6 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
    const auto previousPlayers = players;
    for (auto& p : players) {
       p.stunTimer = std::max(0.f, p.stunTimer - dt);
-      p.forcedCrouchTimer = std::max(0.f, p.forcedCrouchTimer - dt);
    }
    for (int i = 0; i < 2; ++i) updatePlayer(i, inputs[i], dt);
    updateEnemies(dt); updateItems(dt); updateBoos(dt); collisions(dt, previousPlayers);

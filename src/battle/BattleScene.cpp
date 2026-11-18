@@ -142,7 +142,7 @@ void BattleScene::processEvents() {
          case E::Coin: s.playSound(SoundID::COIN); break;
          case E::Hurt: s.playSound(SoundID::SHRINK); break;
          case E::Death: s.playSound(SoundID::DEATH); break;
-         case E::Pow: s.playSound(SoundID::BOWSER_FALL); notice="POW! ALL ENEMIES OVERTURNED"; noticeTimer=2; break;
+         case E::Pow: s.playSound(SoundID::BOWSER_FALL); notice="POW! ENEMIES FLIPPED / RIVAL STUNNED"; noticeTimer=2; break;
          case E::Mushroom: s.playSound(SoundID::POWER_UP_COLLECT); break;
          case E::Swap: s.playSound(SoundID::PIPE); notice="? MUSHROOM: SWAP!"; noticeTimer=2; break;
          case E::RoundWin: s.stopMusic(); s.playSound(SoundID::CASTLE_CLEAR); resultDelay=0; break;
@@ -194,14 +194,32 @@ void BattleScene::sprite(SDL_Texture* t,SDL_Rect s,SDL_Rect d,bool flip,bool ups
    else if (d.x+d.w>800) { d.x-=800; SDL_RenderCopyEx(renderer,t,&s,&d,0,nullptr,f); }
 }
 void BattleScene::drawPlayer(const battle::Player& p,int i) {
-   if (p.eliminated || (p.invulnerable>0 && static_cast<int>(animation*14)%2)) return;
+   if (p.eliminated) return;
+   const bool stunned=p.stunTimer>0;
    const int h=static_cast<int>(p.height()), w=p.super&&!p.crouched?24:28;
-   int frame=std::abs(p.vx)>20 ? 1+static_cast<int>(animation*(std::abs(p.vx)>190?15:9))%3 : 0;
-   if (!p.grounded) frame=5;
-   if (p.crouched) frame=p.super?6:0;
+   // Both rows use columns 3-5 for walking and column 7 for jumping.
+   int frame=std::abs(p.vx)>20 ? 2+static_cast<int>(animation*(std::abs(p.vx)>190?15:9))%3 : 0;
+   if (!p.grounded) frame=6;
+   if (stunned || p.crouched) frame=1;
    SDL_Rect src{1+frame*16,9+(i*4+(p.super?1:0))*16,16,p.super?32:16};
-   sprite(playerTexture.get(),src,{static_cast<int>(p.x)-w/2,static_cast<int>(p.y)-h,w,h},p.facing<0);
-   text(p.stunTimer>0?"STUN":i==0?"1":"2",static_cast<int>(p.x),static_cast<int>(p.y)-h-13,8,p.stunTimer>0?gold:i==0?red:green,true);
+   // The large crouch frame has ten blank rows above its 22-pixel pose.
+   if (p.super && frame==1) { src.y+=10; src.h=22; }
+   const auto stars=[&](bool front) {
+      if (!stunned) return;
+      for (int star=0;star<4;++star) {
+         const float angle=animation*6+star*1.570796f, depth=std::sin(angle);
+         if ((depth>=0)!=front) continue;
+         const int size=front?8:6;
+         const int x=static_cast<int>(p.x+std::cos(angle)*20)-size/2;
+         const int y=static_cast<int>(p.y-h-5+depth*5)-size/2;
+         sprite(blockTexture.get(),blockSource(96),{x,y,size,size});
+      }
+   };
+   stars(false);
+   if (!(p.invulnerable>0 && static_cast<int>(animation*14)%2))
+      sprite(playerTexture.get(),src,{static_cast<int>(p.x)-w/2,static_cast<int>(p.y)-h,w,h},p.facing<0);
+   stars(true);
+   if (!stunned) text(i==0?"1":"2",static_cast<int>(p.x),static_cast<int>(p.y)-h-13,8,i==0?red:green,true);
 }
 void BattleScene::drawEnemy(const battle::Enemy& e) {
    const int x=static_cast<int>(e.x), y=static_cast<int>(e.y), frame=e.alive?static_cast<int>(animation*7)%2:0;
@@ -319,7 +337,7 @@ void BattleScene::render() {
    SDL_RenderSetViewport(renderer,&originalViewport); drawHud();
    rect(0,464,800,16,ink);
    text("ESC PAUSE   TAB RULES   M "+std::string(muted?"UNMUTE":"MUTE")+"   F11 FULLSCREEN"+
-        (game.rules.invinciblePlayers?"   TEST: BOTH INVINCIBLE":""),400,468,8,dim,true);
+        (game.rules.invinciblePlayers?"   TEST: NO ELIMINATION":""),400,468,8,dim,true);
    if (noticeTimer>0) text(notice,400,83,10,gold,true);
    if (title) {
       drawPanel("SUPER MARIO BROS.",gold); text("BATTLE GAME",400,155,32,white,true);

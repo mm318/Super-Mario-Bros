@@ -6,7 +6,8 @@ Press Start 2P font, music and sound effects. Platforms use the underground
 thick-brick tile. Boo hazards use castle-palette Lakitu sprites. Pipes are built
 from the four overworld pipe tiles; mushrooms use the overworld mushroom tile.
 Flying Koopas use their winged, walking and shell sprites; Buzzy Beetles use
-the underground-palette walking and shell sprites. POW, the arena
+the underground-palette walking and shell sprites. Stun stars use the existing
+overworld star tile. POW, the arena
 background, HUD, menus, status indicators and particles are drawn in code.
 
 Defeat enemies to create **shared coins**, race to collect five, or eliminate the
@@ -54,11 +55,13 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
   only the player who kicked it; the rival can be hit immediately.
 - Recovered enemies move faster. Bumping a stunned enemy turns it upright early
   and increases its speed. Spinies also change color.
-- Stomping a rival forces them to crouch and stuns them for 0.5 seconds. Hitting
+- Stomping a rival stuns them for 0.5 seconds. Hitting
   the block beneath a rival stuns them for 1 second and bumps them upward.
   Movement, dash and jump input are locked while stunned; gravity still applies.
   These effects work on both player sizes, during damage invulnerability, and in
-  test mode. A `STUN` label marks the affected player.
+  test mode. Stunned Super players use the crouch sprite; Small players use their
+  game-over sprite without shrinking it into a crouch. Four stars orbit their
+  head until the stun ends. Manual Super crouching uses the same crouch sprite.
 - Both players start every round Super. Damage makes them Small, with brief
   invulnerability; another hit eliminates them and immediately awards the round.
 - Walking green Koopas follow the same shell rules but never award
@@ -71,6 +74,7 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
   a walking green Koopa generates no coin. New walking Koopas can spawn afterward.
 - The central POW overturns Spinies and beetles, retracts all Koopas (including
   walking and airborne ones), stops moving shells, and clears Boos.
+  It also stuns the opposing player for one second, regardless of invincibility.
   It has three charges and returns after a random delay once exhausted.
 - Mushrooms restore Super size. Swap mushrooms exchange player positions when
   sizes match, or exchange their sizes when they differ. Both use the unmodified
@@ -111,7 +115,7 @@ zig build
 zig build -Doptimize=safe run
 ```
 
-To test the game with both players invincible:
+To test the game with both players protected from elimination:
 
 ```sh
 zig build -Doptimize=safe run -- --test
@@ -119,10 +123,12 @@ zig build -Doptimize=safe run -- --test
 ./zig-out/bin/super-mario-bros --test
 ```
 
-`--test` makes Mario and Luigi immune to enemy, shell and hazard damage in either
-size. It stays enabled across rounds, matches and restarts for that session.
-The footer shows `TEST: BOTH INVINCIBLE`. Player stomps and platform bumps still
-stun players, and coin victories still end rounds. Omit the flag to play normally.
+`--test` allows enemies, shells and hazards to shrink Super Mario and Luigi as
+usual. Once Small, they take no damage or damage knockback and cannot be
+eliminated; a mushroom restores Super size and lets them shrink again. The mode
+stays enabled across rounds, matches and restarts for that session. The footer
+shows `TEST: NO ELIMINATION`. Player stomps, platform bumps and POW still stun
+players, and coin victories still end rounds. Omit the flag to play normally.
 
 The executable is `zig-out/bin/super-mario-bros` (`.exe` on Windows), retaining
 the existing artifact name. The default window is 1600 × 960, with an 800 × 480
@@ -167,8 +173,9 @@ climbing in both player sizes, jump/bump/kick behavior, contested
 coins, damage, both ? Mushroom cases, POW exhaustion/regeneration, spawning,
 Buzzy Beetle immunity/revival/finishing kicks, Koopa wing removal, POW effects,
 side/stomp shell launches, per-player kick grace, one-recycle shell retirement,
-recovery after continuous rest, player stomp/bump stun durations, forced crouching,
-test-mode immunity for both players, variable jumps, wrapping, simultaneous input and 162,000
+recovery after continuous rest, player stomp/bump/POW stun durations, Super stun
+crouching, test-mode shrinking and Small-player damage immunity for both players,
+variable jumps, wrapping, simultaneous input and 162,000
 stress simulation steps. CI builds native and web configurations and runs rules
 tests. The rules tests can also run with AddressSanitizer/UBSan via a C++17 compiler.
 

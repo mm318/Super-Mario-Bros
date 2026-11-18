@@ -393,26 +393,44 @@ void invinciblePlayersTestMode() {
       normal.players[player].invulnerable=0; normal.hurtPlayer(player);
       CHECK(normal.players[player].eliminated && normal.winner==1-player);
       auto g=quiet(); g.rules.invinciblePlayers=true;
-      for (bool super : {false,true}) {
-         auto& p=g.players[player]; p.super=super;
-         for (int hit=0;hit<10;++hit) g.hurtPlayer(player);
-         CHECK(p.super==super && !p.eliminated && p.invulnerable==0);
-         Enemy enemy; enemy.x=p.x; enemy.y=floorY;
-         g.enemies.push_back(enemy); g.step(dt,{}); g.enemies.clear();
-         auto& shell=addKoopa(g); shell.shell=true; shell.x=p.x-4; shell.y=floorY;
-         shell.vx=350; shell.recovery=9; g.step(dt,{}); g.enemies.clear();
-         Boo boo; boo.x=p.x; boo.y=436; boo.diagonal=true;
-         g.boos.push_back(boo); g.step(dt,{}); g.boos.clear();
-         CHECK(p.super==super && !p.eliminated && g.phase==Phase::Playing);
+      auto& p=g.players[player]; g.hurtPlayer(player);
+      CHECK(!p.super && !p.eliminated && p.invulnerable==g.rules.invulnerabilitySeconds && p.vy<0);
+      p.invulnerable=0; const float vy=p.vy;
+      for (int hit=0;hit<10;++hit) g.hurtPlayer(player);
+      CHECK(!p.super && !p.eliminated && p.invulnerable==0 && p.vy==vy);
+      CHECK(g.events.size()==1 && g.events[0].type==EventType::Hurt);
+      Item mushroom; mushroom.type=ItemType::Mushroom; g.collectItem(mushroom,player);
+      CHECK(p.super); g.hurtPlayer(player); CHECK(!p.super && !p.eliminated);
+
+      // Contact with every active enemy, both moving shell types, and a Boo
+      // shrinks a Super player, but cannot damage or knock back a Small player.
+      for (bool super : {false,true}) for (int hazard=0;hazard<7;++hazard) {
+         auto contact=quiet(); contact.rules.invinciblePlayers=true;
+         auto& target=contact.players[player]; target.super=super; target.x=352;
+         if (hazard<6) {
+            const EnemyType types[]={EnemyType::Spiny,EnemyType::BuzzyBeetle,EnemyType::FlyingKoopa,EnemyType::WalkingKoopa,EnemyType::FlyingKoopa,EnemyType::WalkingKoopa};
+            Enemy enemy; enemy.type=types[hazard]; enemy.x=target.x-4; enemy.y=floorY;
+            enemy.grounded=true; enemy.hop=1000;
+            if (hazard>=4) { enemy.shell=true; enemy.vx=350; enemy.recovery=9; }
+            contact.enemies.push_back(enemy);
+         } else {
+            Boo boo; boo.x=target.x; boo.y=436; boo.diagonal=true;
+            contact.boos.push_back(boo);
+         }
+         contact.step(dt,{});
+         CHECK(!target.super && !target.eliminated && contact.phase==Phase::Playing);
+         CHECK(super ? target.invulnerable>0 && target.vy<0 : target.invulnerable==0 && target.vy==0 && target.y==floorY);
+         int hurts=0; for (const auto& e:contact.events) hurts+=e.type==EventType::Hurt;
+         CHECK(hurts==(super?1:0));
       }
       for (int coin=0;coin<5;++coin) { Item item; g.collectItem(item,0); }
       CHECK(g.phase==Phase::RoundOver && g.winner==0);
       g.nextRound(); g.phase=Phase::Playing;
-      for (int i=0;i<2;++i) { g.hurtPlayer(i); CHECK(g.players[i].super && !g.players[i].eliminated); }
+      for (int i=0;i<2;++i) { g.hurtPlayer(i); CHECK(!g.players[i].super && !g.players[i].eliminated); }
       for (int coin=0;coin<5;++coin) { Item item; g.collectItem(item,1); }
       CHECK(g.phase==Phase::RoundOver && g.winner==1);
       g.startMatch(); g.phase=Phase::Playing;
-      for (int i=0;i<2;++i) { g.hurtPlayer(i); CHECK(g.players[i].super && !g.players[i].eliminated); }
+      for (int i=0;i<2;++i) { g.hurtPlayer(i); CHECK(!g.players[i].super && !g.players[i].eliminated); }
       CHECK(g.rules.invinciblePlayers);
    }
 }
@@ -427,19 +445,19 @@ void playerStompsAndStuns() {
       stomper.x=352; stomper.y=target.y-target.height()-8;
       stomper.vy=220; stomper.grounded=false;
       for (int frame=0;frame<30 && target.stunTimer==0;++frame) g.step(dt,{});
-      CHECK(target.stunTimer>=.49f && target.forcedCrouchTimer>=.49f);
-      CHECK(target.crouched && target.height()==(super?28:20) && target.super==super);
+      CHECK(target.stunTimer>=.49f);
+      CHECK(target.crouched==super && target.height()==28 && target.super==super);
       CHECK(!target.eliminated && stomper.vy<0);
       stomper.x=100; stomper.y=floorY; stomper.vx=stomper.vy=0; stomper.grounded=true;
       std::array<Input,2> trying{};
       trying[victim].right=trying[victim].jump=trying[victim].dash=true;
       tick(g,.4f,trying);
-      CHECK(target.x==352 && target.vx==0 && target.y==floorY && target.crouched);
-      CHECK(target.stunTimer>0 && target.forcedCrouchTimer>0);
+      CHECK(target.x==352 && target.vx==0 && target.y==floorY && target.crouched==super);
+      CHECK(target.stunTimer>0);
       tick(g,.15f);
-      CHECK(target.stunTimer==0 && target.forcedCrouchTimer==0 && !target.crouched);
+      CHECK(target.stunTimer==0 && !target.crouched);
       g.step(dt,trying); CHECK(target.vx>0 && target.vy<0);
-      g.startMatch(); CHECK(g.players[victim].stunTimer==0 && g.players[victim].forcedCrouchTimer==0);
+      g.startMatch(); CHECK(g.players[victim].stunTimer==0 && !g.players[victim].crouched);
    }
    // Side contact doesn't count as a stomp.
    auto g=quiet(); g.players[0].x=352; g.players[1].x=374;
@@ -453,8 +471,8 @@ void platformPlayerStuns() {
       target.x=176; target.y=344; target.super=super; target.invulnerable=9;
       bumper.x=176; std::array<Input,2> in{}; in[attacker].jump=true;
       for (int frame=0;frame<60 && target.stunTimer==0;++frame) g.step(dt,in);
-      CHECK(target.stunTimer>=.99f && target.forcedCrouchTimer==0 && target.vy<0);
-      CHECK(target.super==super && !target.crouched && !target.eliminated);
+      CHECK(target.stunTimer>=.99f && target.vy<0);
+      CHECK(target.super==super && target.crouched==super && !target.eliminated);
       bumper.x=700; bumper.y=floorY; bumper.vx=bumper.vy=0; bumper.grounded=true;
       in={}; in[victim].right=in[victim].jump=in[victim].dash=true;
       tick(g,.8f,in);
@@ -462,16 +480,42 @@ void platformPlayerStuns() {
       tick(g,.25f); CHECK(target.stunTimer==0);
       g.step(dt,in); CHECK(target.vx>0 && target.vy<0);
    }
-   // A later stomp forces half a second of ducking without shortening a longer stun.
+   // A later stomp cannot shorten an existing platform stun or its crouch pose.
    auto g=quiet(); g.players[1].x=352; g.players[1].y=240;
    g.bumpSegment(tileAt(g,352,240),0);
    g.players[1].y=240; g.players[1].vy=0; g.players[1].grounded=true;
-   g.players[0].x=352; g.players[0].y=184; g.players[0].vy=220; g.players[0].grounded=false;
-   for (int frame=0;frame<30 && g.players[1].forcedCrouchTimer==0;++frame) g.step(dt,{});
-   CHECK(g.players[1].stunTimer>.8f && g.players[1].forcedCrouchTimer>=.49f);
+   g.players[0].x=352; g.players[0].y=240-g.players[1].height()-8;
+   g.players[0].vy=220; g.players[0].grounded=false;
+   bool stomped=false;
+   for (int frame=0;frame<30 && !stomped;++frame) {
+      g.step(dt,{});
+      for (const auto& e:g.events) stomped|=e.type==EventType::Stun && e.player==1;
+   }
+   CHECK(stomped && g.players[1].stunTimer>.8f && g.players[1].crouched);
    g.players[0].x=100; g.players[0].y=floorY; g.players[0].vx=g.players[0].vy=0;
    tick(g,.6f);
-   CHECK(g.players[1].stunTimer>0 && g.players[1].forcedCrouchTimer==0 && !g.players[1].crouched);
+   CHECK(g.players[1].stunTimer>0 && g.players[1].crouched);
+}
+void powStunsPlayers() {
+   for (bool testMode : {false,true}) for (bool super : {false,true})
+   for (bool damageGrace : {false,true}) for (int attacker=0;attacker<2;++attacker) {
+      auto g=quiet(); g.rules.invinciblePlayers=testMode;
+      auto& target=g.players[1-attacker]; target.super=super;
+      target.invulnerable=damageGrace?9:0; target.vx=120;
+      const float x=target.x;
+      g.activatePow(attacker);
+      CHECK(g.powCharges==2 && target.stunTimer==g.rules.powStunSeconds);
+      CHECK(target.super==super && !target.eliminated && target.crouched==super && target.vx==0);
+      CHECK(g.players[attacker].stunTimer==0);
+      std::array<Input,2> in{}; in[1-attacker].right=in[1-attacker].jump=in[1-attacker].dash=true;
+      tick(g,.8f,in);
+      CHECK(target.stunTimer>.15f && target.x==x && target.y==floorY && target.vx==0);
+      tick(g,.25f); CHECK(target.stunTimer==0 && !target.crouched);
+      g.step(dt,in); CHECK(target.vx>0 && target.vy<0);
+      // An exhausted POW cannot stun anyone.
+      g.powCharges=0; target.stunTimer=0; g.activatePow(attacker);
+      CHECK(target.stunTimer==0 && g.players[attacker].stunTimer==0);
+   }
 }
 void emptyRoundsAndPipeSpawns() {
    Rules rules; rules.readySeconds=.05f; rules.enemySpawnSeconds=.1f;
@@ -525,7 +569,7 @@ int main() {
    matchRules(); rosters(); recurringWalkingKoopas(); enemyStates(); bumpAndKick(); solidPlatforms(); damageAndItems();
    powAndReplenishment(); shellsAndMovement(); stoppedShellRecovery(); flyingKoopas(); buzzyBeetles();
    powHitsAllKoopas(); sensitiveShellKicks(); shellPipeLimit(); defeatedEnemyFlight();
-   invinciblePlayersTestMode(); playerStompsAndStuns(); platformPlayerStuns();
+   invinciblePlayersTestMode(); playerStompsAndStuns(); platformPlayerStuns(); powStunsPlayers();
    emptyRoundsAndPipeSpawns(); tiesAndStress();
    std::cout << "Battle rules: all checks passed (including 162,000 simulation steps).\n";
 }

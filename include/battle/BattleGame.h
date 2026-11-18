@@ -9,11 +9,11 @@
 // in seconds and logical pixels, rather than pretending to be SNES constants.
 namespace battle {
 struct Rules {
-   bool invinciblePlayers = false;
+   bool invinciblePlayers = false; // Test mode prevents elimination after shrinking.
    float gravity = 1600, jumpSpeed = 520, heldJumpGravity = .60f;
    float acceleration = 1500, friction = 1800, walkSpeed = 180, dashSpeed = 280;
    float stunSeconds = 7, invulnerabilitySeconds = 1.8f;
-   float stompStunSeconds = .5f, platformStunSeconds = 1;
+   float stompStunSeconds = .5f, platformStunSeconds = 1, powStunSeconds = 1;
    float enemySpawnSeconds = 2.8f, booSpawnSeconds = 14, itemSpawnSeconds = 17;
    float walkingKoopaChance = .07f;
    float powRespawnMin = 16, powRespawnMax = 28, shellRecoverySeconds = 9;
@@ -42,9 +42,9 @@ struct Input {
 struct Player : Body {
    bool super = true, crouched = false, eliminated = false, jumpHeld = false;
    float invulnerable = 0;
-   float stunTimer = 0, forcedCrouchTimer = 0;
+   float stunTimer = 0;
    int coins = 0, facing = 1;
-   float height() const { return crouched ? (super ? 28.f : 20.f) : (super ? 48.f : 28.f); }
+   float height() const { return super && !crouched ? 48.f : 28.f; }
 };
 enum class EnemyType { Spiny, BuzzyBeetle, FlyingKoopa, WalkingKoopa };
 struct Enemy : Body {
@@ -112,7 +112,7 @@ private:
    void updatePlayer(int index, const Input& input, float dt);
    void collidePlayerCeiling(int index, float oldTop);
    void bouncePlayer(int index, float top);
-   void stunPlayer(int index, float seconds, bool crouch);
+   void stunPlayer(int index, float seconds);
    void collidePlayers(const std::array<Player, 2>& previous);
    void updateEnemies(float dt);
    void defeatEnemy(Enemy& enemy, int player);
