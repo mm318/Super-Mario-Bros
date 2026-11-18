@@ -11,10 +11,26 @@ const source_files = [_][]const u8{
     "main.cpp",
 };
 
-const resource_dirs = [_][]const u8{
-    "fonts",
-    "sounds",
-    "sprites",
+// Track individual inputs so resource changes invalidate the browser bundle.
+const resource_files = [_][]const u8{
+    "res/fonts/press-start-2p.ttf",
+    "res/sounds/effects/blockhit.wav",
+    "res/sounds/effects/bowserfall.wav",
+    "res/sounds/effects/castleclear.wav",
+    "res/sounds/effects/coin.wav",
+    "res/sounds/effects/death.wav",
+    "res/sounds/effects/jump.wav",
+    "res/sounds/effects/kick.wav",
+    "res/sounds/effects/oneup.wav",
+    "res/sounds/effects/pipe.wav",
+    "res/sounds/effects/powerupcollect.wav",
+    "res/sounds/effects/shrink.wav",
+    "res/sounds/effects/stomp.wav",
+    "res/sounds/music/underground.wav",
+    "res/sprites/blocks/BlockTileSheet.png",
+    "res/sprites/characters/EnemySpriteSheet.png",
+    "res/sprites/characters/PlayerSpriteSheet.png",
+    "res/sprites/icons/windowicon.png",
 };
 
 pub fn build(b: *Build) void {
@@ -120,11 +136,7 @@ pub fn build(b: *Build) void {
         });
         b.installArtifact(exe);
 
-        for (resource_dirs) |dir| b.installDirectory(.{
-            .source_dir = b.path(b.fmt("res/{s}", .{dir})),
-            .install_dir = .bin,
-            .install_subdir = b.fmt("res/{s}", .{dir}),
-        });
+        for (resource_files) |file| b.installBinFile(file, file);
 
         const filename = if (target.result.os.tag == .windows) "super-mario-bros.exe" else "super-mario-bros";
         const run = b.addRunFile(.{
@@ -181,12 +193,9 @@ fn emLinkStep(
     });
     link.addPrefixedFileArg("--shell-file=", b.path("web_assets/shell_minimal.html"));
 
-    for (resource_dirs) |dir| {
+    for (resource_files) |file| {
         link.addArg("--preload-file");
-        link.addDirectoryArg2(
-            b.path(b.fmt("res/{s}", .{dir})),
-            .{ .suffix = b.fmt("@/res/{s}", .{dir}) },
-        );
+        link.addFileArg2(b.path(file), .{ .suffix = b.fmt("@/{s}", .{file}) });
     }
 
     link.addArtifactArg(lib);
