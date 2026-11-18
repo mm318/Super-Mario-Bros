@@ -147,7 +147,7 @@ void BattleScene::processEvents() {
          case E::RoundWin: s.stopMusic(); s.playSound(SoundID::CASTLE_CLEAR); resultDelay=0; break;
          case E::MatchWin: s.playSound(SoundID::ONE_UP); saveStars(); break;
       }
-      if (e.type==E::Kick || e.type==E::Coin || e.type==E::Pow || e.type==E::Swap || e.type==E::Hurt) {
+      if (e.type==E::Coin || e.type==E::Pow || e.type==E::Swap || e.type==E::Hurt) {
          for (int i=0; i<14; ++i) {
             const float a=i*6.283185f/14;
             particles.push_back({e.x,e.y-16,std::cos(a)*110,std::sin(a)*110-60,.65f,e.type==E::Hurt?red:gold});
@@ -157,7 +157,8 @@ void BattleScene::processEvents() {
 }
 void BattleScene::update() {
    const double now=static_cast<double>(SDL_GetPerformanceCounter())/SDL_GetPerformanceFrequency();
-   const float dt=static_cast<float>(std::min(now-previous,.1)); previous=now; animation+=dt;
+   const float dt=static_cast<float>(std::min(now-previous,.1)); previous=now;
+   if (!paused) animation+=dt;
    if (!title && !paused) {
       if (game.phase==battle::Phase::RoundOver || game.phase==battle::Phase::MatchOver) resultDelay+=dt;
       accumulator+=dt;
@@ -184,9 +185,10 @@ void BattleScene::text(const std::string& value,int x,int y,int size,SDL_Color c
    const auto& label=found->second;
    SDL_Rect d{x-(centered?label.w/2:0),y,label.w,label.h}; SDL_RenderCopy(renderer,label.texture.get(),nullptr,&d);
 }
-void BattleScene::sprite(SDL_Texture* t,SDL_Rect s,SDL_Rect d,bool flip,bool upsideDown) {
+void BattleScene::sprite(SDL_Texture* t,SDL_Rect s,SDL_Rect d,bool flip,bool upsideDown,bool wrapHorizontal) {
    const auto f=static_cast<SDL_RendererFlip>((flip?SDL_FLIP_HORIZONTAL:0)|(upsideDown?SDL_FLIP_VERTICAL:0));
    SDL_RenderCopyEx(renderer,t,&s,&d,0,nullptr,f);
+   if (!wrapHorizontal) return;
    if (d.x<0) { d.x+=800; SDL_RenderCopyEx(renderer,t,&s,&d,0,nullptr,f); }
    else if (d.x+d.w>800) { d.x-=800; SDL_RenderCopyEx(renderer,t,&s,&d,0,nullptr,f); }
 }
@@ -201,56 +203,45 @@ void BattleScene::drawPlayer(const battle::Player& p,int i) {
    text(i==0?"1":"2",static_cast<int>(p.x),static_cast<int>(p.y)-h-13,8,i==0?red:green,true);
 }
 void BattleScene::drawEnemy(const battle::Enemy& e) {
-   const int x=static_cast<int>(e.x), y=static_cast<int>(e.y), frame=static_cast<int>(animation*7)%2;
+   const int x=static_cast<int>(e.x), y=static_cast<int>(e.y), frame=e.alive?static_cast<int>(animation*7)%2:0;
    if (e.type==battle::EnemyType::Spiny) {
       SDL_SetTextureColorMod(enemyTexture.get(),255,e.speedLevel?140:255,e.speedLevel?130:255);
-      sprite(enemyTexture.get(),enemySource(502+frame),{x-14,y-28,28,28},e.direction<0,e.stunned);
+      sprite(enemyTexture.get(),enemySource(502+frame),{x-14,y-28,28,28},e.direction>0,e.stunned,e.alive);
       SDL_SetTextureColorMod(enemyTexture.get(),255,255,255);
+   } else if (e.type==battle::EnemyType::BuzzyBeetle) {
+      // Underground palette, walking frames 192/193 and shell 194.
+      sprite(enemyTexture.get(),enemySource(e.stunned?194:192+frame),{x-14,y-28,28,28},e.direction>0,false,e.alive);
    } else {
-      // Pixel-drawn additions match the existing NES sprite scale.
-      const SDL_Color c=e.type==battle::EnemyType::Crab ? (e.angry||e.speedLevel?red:SDL_Color{238,144,69,255}) : (e.speedLevel?SDL_Color{221,112,242,255}:SDL_Color{138,146,247,255});
-      const int top=y-26;
-      const auto pixel=[this,&e,y](int px,int py,int w,int h,SDL_Color color) {
-         rect(px,e.stunned?2*y-26-py-h:py,w,h,color);
-      };
-      if (e.type==battle::EnemyType::Crab) {
-         pixel(x-12,top+8,24,13,c); pixel(x-17,top+3,6,10,c); pixel(x+11,top+3,6,10,c);
-         pixel(x-9,top+3,5,8,white); pixel(x+4,top+3,5,8,white);
-         pixel(x-7,top+5,2,4,ink); pixel(x+5,top+5,2,4,ink);
-         for (int n : {-1,1}) pixel(x+n*12-3,y-7+(e.stunned?-13:frame*2),6,5,c);
-      } else {
-         pixel(x-15,top+frame*4,11,9,white); pixel(x+4,top+frame*4,11,9,white);
-         pixel(x-9,top+8,18,16,c); pixel(x-7,top+9,5,6,white); pixel(x+2,top+9,5,6,white);
-         pixel(x-5,top+11,2,3,ink); pixel(x+4,top+11,2,3,ink);
-         pixel(x-12,y-3,9,3,gold); pixel(x+3,y-3,9,3,gold);
-      }
+      const bool shell=e.stunned||e.shell;
+      const int id=shell?77:(e.winged?40:38)+frame;
+      const int height=shell?28:56;
+      sprite(enemyTexture.get(),enemySource(id,shell?16:32),{x-14,y-height,28,height},e.direction>0,e.stunned,e.alive);
    }
-   if (e.stunned) {
+   if (e.alive && e.stunned) {
       text(e.recovery<2 && static_cast<int>(animation*8)%2?"!":"*",x,y-42,10,gold,true);
-      rect(x-14,y+3,28,3,{45,51,66,255}); rect(x-14,y+3,static_cast<int>(28*e.recovery/game.rules.stunSeconds),3,gold);
+      rect(x-14,y+3,28,3,{45,51,66,255}); rect(x-14,y+3,static_cast<int>(28*e.recovery/(e.type==battle::EnemyType::FlyingKoopa?game.rules.shellRecoverySeconds:game.rules.stunSeconds)),3,gold);
    }
 }
 void BattleScene::drawBoo(const battle::Boo& b) {
-   const auto draw=[this,&b](int offset) {
-      int x=static_cast<int>(b.x)+offset,y=static_cast<int>(b.y)-28;
-      rect(x-8,y,16,4,white); rect(x-13,y+4,26,18,white); rect(x-9,y+22,22,6,white);
-      rect(x-17,y+15,8,8,white); rect(x-6,y+9,4,7,ink); rect(x+3,y+9,4,7,ink); rect(x-4,y+19,10,5,red);
-   };
-   draw(0); if (b.x<18) draw(800); if (b.x>782) draw(-800);
+   // Castle palette, full Lakitu in its cloud (column 15, rows 10/11).
+   sprite(enemyTexture.get(),enemySource(365,32),
+          {static_cast<int>(b.x)-14,static_cast<int>(b.y)-56,28,56},b.vx>0);
 }
 void BattleScene::drawItem(const battle::Item& item) {
    int x=static_cast<int>(item.x),y=static_cast<int>(item.y);
    if (item.type==battle::ItemType::Coin) {
       sprite(blockTexture.get(),blockSource(656+static_cast<int>(animation*8)%3),{x-12,y-26,24,26});
    } else {
-      sprite(blockTexture.get(),blockSource(608),{x-14,y-28,28,28});
-      if (item.type==battle::ItemType::SwapMushroom) text("?",x,y-25,12,red,true);
+      sprite(blockTexture.get(),blockSource(52),{x-14,y-28,28,28});
    }
 }
 void BattleScene::drawPipe(int x,int y,bool right) {
-   rect(x,y,80,42,{21,81,48,255}); rect(x,y+4,80,9,{111,211,76,255}); rect(x,y+13,80,16,{48,154,55,255});
-   rect(right?x:x+68,y-4,16,50,{13,48,35,255}); rect(right?x+2:x+70,y-2,12,46,{79,182,58,255});
-   rect(right?x+4:x+72,y+1,8,8,{153,235,91,255});
+   // Overworld horizontal pipe: four blocks at columns 4/5, rows 5/6.
+   for (int row=0;row<2;++row) for (int column=0;column<2;++column) {
+      const int sourceColumn=right?column:1-column;
+      sprite(blockTexture.get(),blockSource(244+row*48+sourceColumn),
+             {x+column*32,y+row*32,32,32},!right);
+   }
 }
 void BattleScene::drawHud() {
    rect(0,0,800,72,ink); rect(0,70,800,2,{64,79,104,255});
@@ -272,7 +263,7 @@ void BattleScene::drawHud() {
    std::string roster;
    for (const auto t : battle::BattleGame::roster(game.round)) {
       if (!roster.empty()) roster+=" + ";
-      roster+=t==battle::EnemyType::Spiny?"SPINY":t==battle::EnemyType::Crab?"CRAB":"FLY";
+      roster+=t==battle::EnemyType::Spiny?"SPINY":t==battle::EnemyType::BuzzyBeetle?"BUZZY":"FLY KOOPA";
    }
    text(roster,400,56,8,dim,true);
 }
@@ -283,14 +274,14 @@ void BattleScene::drawPanel(const std::string& heading,SDL_Color accent) {
 void BattleScene::drawHelp() {
    drawPanel("HOW TO BATTLE",gold);
    text("1  BUMP FROM BELOW",100,161,12,gold);
-   text("Jump through a platform under a grounded enemy.",100,185,10,white);
+   text("Hit solid bricks under a grounded enemy.",100,185,10,white);
    text("2  KICK, THEN RACE",100,214,12,gold);
-   text("Touch stunned enemies. A coin leaves an upper pipe.",100,238,10,white);
+   text("Climb around edges; touch stunned foes for a coin.",100,238,10,white);
    text("Either player can take it. Five coins wins!",100,256,10,white);
    text("3  SURVIVE THE RIVALRY",100,285,12,gold);
    text("Super > Small > out. Elimination also wins.",100,309,10,white);
-   text("Crabs: two bumps. Flies: bump while grounded.",100,329,10,dim);
-   text("POW: 3 uses. Stomp Koopa; kick its shell.",100,349,10,dim);
+   text("Beetles: bump to shell; stomp to revive.",100,329,10,dim);
+   text("POW x3. Stomp Koopa shells to launch them.",100,349,10,dim);
    text("? Mushroom swaps positions, or sizes if different.",100,369,10,dim);
    text("ENTER / TAB TO RETURN",400,400,10,green,true);
 }
@@ -308,22 +299,22 @@ void BattleScene::render() {
    SDL_RenderSetViewport(renderer,&viewport);
    for (const auto& s : game.segments) {
       const int y=static_cast<int>(s.y-std::sin(s.bump/.22f*3.14159f)*8);
-      sprite(blockTexture.get(),blockSource(289),{static_cast<int>(s.x),y,32,16});
-      rect(static_cast<int>(s.x),y,31,3,{104,164,183,255}); rect(static_cast<int>(s.x),y+15,32,3,{8,14,29,255});
+      // Underground palette, thick-brick tile (column 18, row 6).
+      sprite(blockTexture.get(),blockSource(306),{static_cast<int>(s.x),y,32,static_cast<int>(battle::platformThickness)});
    }
-   for (int x=0;x<800;x+=32) sprite(blockTexture.get(),blockSource(340),{x,448,32,32});
-   rect(0,448,800,3,{107,160,152,255});
-   drawPipe(0,98,false); drawPipe(720,98,true); drawPipe(0,406,false); drawPipe(720,406,true);
+   for (int x=0;x<800;x+=32) sprite(blockTexture.get(),blockSource(306),{x,448,32,32});
+   drawPipe(0,80,false); drawPipe(736,80,true); drawPipe(0,384,false); drawPipe(736,384,true);
    if (game.powCharges) {
       rect(380,344,40,32,{8,10,22,255}); rect(383,346,34,27,{75,131,221,255}); text("POW",400,352,10,white,true);
       for (int i=0;i<game.powCharges;++i) rect(385+i*10,367,8,3,white);
    }
    for (const auto& i : game.items) drawItem(i);
    for (const auto& e : game.enemies) drawEnemy(e);
-   sprite(enemyTexture.get(),enemySource(game.koopa.shell?77:38+static_cast<int>(animation*7)%2,game.koopa.shell?16:32),
+   if (game.koopa.alive) sprite(enemyTexture.get(),enemySource(game.koopa.shell?77:38+static_cast<int>(animation*7)%2,game.koopa.shell?16:32),
       {static_cast<int>(game.koopa.x)-14,static_cast<int>(game.koopa.y)-(game.koopa.shell?28:48),28,game.koopa.shell?28:48},game.koopa.direction>0);
    for (const auto& b : game.boos) drawBoo(b);
    for (int i=0;i<2;++i) drawPlayer(game.players[i],i);
+   for (const auto& e : game.defeatedEnemies) drawEnemy(e);
    for (const auto& p : particles) rect(static_cast<int>(p.x),static_cast<int>(p.y),4,4,p.color);
    SDL_RenderSetViewport(renderer,&originalViewport); drawHud();
    rect(0,464,800,16,ink);

@@ -8,6 +8,7 @@
 
 namespace {
 constexpr int screenWidth = 800, screenHeight = 480;
+constexpr int defaultWindowScale = 2;
 }
 
 TextureManager TextureManager::instance;
@@ -28,7 +29,7 @@ int TextureManager::Init() {
 
    SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");
    window = SDL_CreateWindow("Super Mario Bros. - Battle Game", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-                             screenWidth, screenHeight,
+                             screenWidth * defaultWindowScale, screenHeight * defaultWindowScale,
                              SDL_WINDOW_SHOWN | SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_RESIZABLE);
    if (!window) {
       SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "Failed to Create Window: %s\n", SDL_GetError());

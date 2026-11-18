@@ -2,8 +2,12 @@
 
 A simultaneous local two-player arena platformer, rebuilt from this repository's
 C++/SDL game using its Mario/Luigi, Spiny, Koopa, tile, mushroom and coin sprites,
-Press Start 2P font, music and sound effects. Crab, Fighter Fly, Boo and POW art is
-rendered as small pixel shapes to accompany the existing NES assets.
+Press Start 2P font, music and sound effects. Platforms use the underground
+thick-brick tile. Boo hazards use castle-palette Lakitu sprites. Pipes are built
+from the four overworld pipe tiles; mushrooms use the overworld mushroom tile.
+Flying Koopas use their winged, walking and shell sprites; Buzzy Beetles use
+the underground-palette walking and shell sprites. POW, the arena
+background, HUD, menus, status indicators and particles are drawn in code.
 
 Defeat enemies to create **shared coins**, race to collect five, or eliminate the
 other player. Win five rounds to earn a match star. There is one fixed, wrapping
@@ -27,25 +31,45 @@ play; **M** mutes; **F11** toggles fullscreen. Gamepad Start pauses/continues an
 Back opens the rules. In pause, **R** restarts the match and **Q** returns to the
 title. Losing window focus pauses automatically. Stars survive restart/title.
 
-Jump through a platform beneath a grounded enemy to bump its segment; land on
-that platform and touch the stunned enemy to kick it. A coin then enters from an
-upper pipe. **Kicks don't award coins automatically.** Either player can collect
-any coin. Platforms are passable upward and solid downward; a head crossing
-triggers the bump without cancelling the jump.
+Jump into the underside of a platform beneath a grounded enemy to bump its
+segment; climb around its edge and touch the stunned enemy to kick it. A coin
+then enters from an upper pipe. **Kicks don't award coins automatically.**
+Either player can collect any coin. Platforms are 32 logical pixels thick and solid on every side. A head
+strike bumps a segment and stops the jump. Use the gaps and edges to climb.
 
-- Spiny needs one bump; Crab needs two; Fighter Fly must be touching a platform.
-- Stunned enemies recover faster. Bumping a stunned enemy turns it upright early,
-  changes its color and increases its speed.
+- Spinies are overturned by one platform bump, then defeated by contact.
+- Permanently kicked-out enemies keep their sprite and fall through the arena
+  and floor, drifting slightly in the kick direction. Their falling bodies have
+  no collisions or rewards; the shared coin appears immediately as before.
+- Underground Buzzy Beetles occupy the original Crab roster slots. Stomping an
+  active beetle bounces the player without hurting either. Bump its platform
+  from below to expose its shell: a side kick defeats it and generates a shared
+  coin, while stomping its shell restores the active beetle.
+- Stomp a flying Koopa to remove its wings; stomp again to retract it into a shell.
+  Platform bumps and POW also retract Koopas. Stomping any Koopa shell launches
+  it, as does side contact with a stopped shell. A short grace period protects
+  only the player who kicked it; the rival can be hit immediately.
+- Recovered enemies move faster. Bumping a stunned enemy turns it upright early
+  and increases its speed. Spinies also change color.
 - Both players start every round Super. Damage makes them Small, with brief
   invulnerability; another hit eliminates them and immediately awards the round.
-- Stomp Koopa and kick its shell at your opponent. It recovers, never awards coins,
-  and its moving shell tosses regular enemies without killing them.
-- The central POW overturns regular enemies anywhere, clears Boos and has three
-  charges. It returns after a random delay once exhausted.
-- Mushrooms restore Super size. A red ? Mushroom swaps player positions when
-  sizes match, or swaps their sizes when they differ.
+- The arena's original green Koopa follows the same shell rules but never awards
+  coins. Moving shells toss other regular enemies without killing them. All
+  Koopa shells recover only after remaining completely stopped on a platform or
+  floor for nine seconds; movement restarts the timer.
+- Moving Koopa shells re-emerge after their first lower-pipe entry, then disappear
+  into a lower pipe on their next entry. Re-kicking or POW does not reset this
+  limit. A regular flying Koopa generates a shared coin when it disappears;
+  the arena Koopa stays gone until the next round and generates no coin.
+- The central POW overturns Spinies and beetles, retracts all Koopas (including
+  the arena Koopa and airborne ones), stops moving shells, and clears Boos.
+  It has three charges and returns after a random delay once exhausted.
+- Mushrooms restore Super size. Swap mushrooms exchange player positions when
+  sizes match, or exchange their sizes when they differ. Both use the unmodified
+  overworld mushroom sprite, without a ? overlay.
 - Coins and enemies recycle through the lower pipes. Unclaimed coins don't expire.
-- Round rosters follow the supplied nine-round table. First to five round wins
+- The original nine-round roster uses Buzzy Beetles in every former Crab slot,
+  and flying Koopas in every former Fighter Fly slot. First to five round wins
   ends the match, after five to nine rounds. A player's sixth star resets their
   displayed stars to zero.
 
@@ -65,7 +89,9 @@ zig build -Doptimize=safe run
 ```
 
 The executable is `zig-out/bin/super-mario-bros` (`.exe` on Windows), retaining
-the existing artifact name. Its assets are installed in `zig-out/bin/res`;
+the existing artifact name. The default window is 1600 × 960, with an 800 × 480
+logical arena, so the larger window keeps the same physics and layout.
+Its assets are installed in `zig-out/bin/res`;
 keep them together. Assets are located relative to the executable, so it works
 from another working directory. `debug`, `safe`, `fast`, and `small` are supported.
 
@@ -99,9 +125,12 @@ music, and Windows icon/resource script. Campaign level data, screenshots,
 menu artwork, tile mappings and unused audio have been removed.
 
 Tests cover five-coin wins, five-to-nine-round matches, star rollover, all nine
-rosters, enemy state transitions, actual jump/bump/kick reachability, contested
+rosters, enemy state transitions, solid platform head/side collisions and edge
+climbing in both player sizes, jump/bump/kick behavior, contested
 coins, damage, both ? Mushroom cases, POW exhaustion/regeneration, spawning,
-Koopa stomping/shells, variable jumps, wrapping, simultaneous input and 162,000
+Buzzy Beetle immunity/revival/finishing kicks, Koopa wing removal, POW effects,
+side/stomp shell launches, per-player kick grace, one-recycle shell retirement,
+recovery after continuous rest, variable jumps, wrapping, simultaneous input and 162,000
 stress simulation steps. CI builds native and web configurations and runs rules
 tests. The rules tests can also run with AddressSanitizer/UBSan via a C++17 compiler.
 

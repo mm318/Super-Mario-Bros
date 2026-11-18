@@ -15,10 +15,12 @@ struct Rules {
    float enemySpawnSeconds = 2.8f, booSpawnSeconds = 14, itemSpawnSeconds = 17;
    float powRespawnMin = 16, powRespawnMax = 28, shellRecoverySeconds = 9;
    float coinSpeed = 105, readySeconds = 2.4f;
-   float spinySpeed = 66, crabSpeed = 56, flySpeed = 66;
-   float recoverySpeedGain = .22f, crabAngryBonus = .65f;
-   float flyHopSpeed = 260, flyHopMin = .6f, flyHopMax = 1.25f;
+   float spinySpeed = 66, buzzyBeetleSpeed = 56, flyingKoopaSpeed = 66;
+   float recoverySpeedGain = .22f;
+   float flyingKoopaHopSpeed = 260, flyingKoopaHopMin = .6f, flyingKoopaHopMax = 1.25f;
    float koopaSpeed = 65, koopaRecoverySpeedGain = 12, shellSpeed = 350;
+   float shellKickGrace = .10f;
+   float defeatedDriftSpeed = 80, defeatedPopSpeed = 100;
    float mushroomSpeed = 78, mushroomChance = .6f;
    float booWaveSpeed = 66, booDiagonalSpeed = 82, booVerticalSpeed = 74;
    float booWaveAmplitude = 55, booWaveFrequency = 2, booLifetime = 32;
@@ -26,6 +28,7 @@ struct Rules {
    static constexpr int coinsToWin = 5, roundsToWin = 5;
 };
 constexpr float width = 800, floorY = 448;
+constexpr float platformThickness = 32;
 struct Body {
    float x = 0, y = 0, vx = 0, vy = 0; // Center x, feet y.
    bool grounded = false;
@@ -39,16 +42,17 @@ struct Player : Body {
    int coins = 0, facing = 1;
    float height() const { return super && !crouched ? 48.f : 28.f; }
 };
-enum class EnemyType { Spiny, Crab, Fly };
+enum class EnemyType { Spiny, BuzzyBeetle, FlyingKoopa };
 struct Enemy : Body {
    EnemyType type = EnemyType::Spiny;
-   bool stunned = false, angry = false, alive = true;
-   int direction = 1, speedLevel = 0;
-   float recovery = 0, hop = .8f, shellCooldown = 0;
+   bool stunned = false, alive = true, winged = true, shell = false;
+   int direction = 1, speedLevel = 0, shellRecycles = 0, lastPlayer = -1;
+   float recovery = 0, hop = .8f, shellCooldown = 0, touchGrace = 0;
+   float height() const { return type == EnemyType::FlyingKoopa && !stunned && !shell ? 40.f : 27.f; }
 };
 struct Koopa : Body {
-   bool shell = false;
-   int direction = 1, speedLevel = 0;
+   bool shell = false, alive = true;
+   int direction = 1, speedLevel = 0, shellRecycles = 0, lastPlayer = -1;
    float recovery = 0, touchGrace = 0;
 };
 enum class ItemType { Coin, Mushroom, SwapMushroom };
@@ -89,6 +93,7 @@ public:
    std::array<int, 2> wins{}, stars{};
    std::vector<Segment> segments;
    std::vector<Enemy> enemies;
+   std::vector<Enemy> defeatedEnemies;
    std::vector<Item> items;
    std::vector<Boo> boos;
    Koopa koopa;
@@ -106,7 +111,11 @@ private:
    float range(float low, float high);
    void moveBody(Body& body, float halfWidth, float dt);
    void updatePlayer(int index, const Input& input, float dt);
+   void collidePlayerCeiling(int index, float oldTop);
+   void bouncePlayer(int index, float top);
    void updateEnemies(float dt);
+   void defeatEnemy(Enemy& enemy, int player);
+   void updateDefeatedEnemies(float dt);
    void updateItems(float dt);
    void updateBoos(float dt);
    void collisions(float dt);

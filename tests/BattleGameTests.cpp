@@ -50,7 +50,7 @@ void matchRules() {
 }
 void rosters() {
    using E=EnemyType;
-   const std::vector<std::vector<E>> expected={{E::Spiny},{E::Spiny,E::Crab},{E::Crab},{E::Spiny,E::Fly},{E::Fly},{E::Fly},{E::Spiny,E::Crab,E::Fly},{E::Crab,E::Fly},{E::Spiny,E::Crab,E::Fly}};
+   const std::vector<std::vector<E>> expected={{E::Spiny},{E::Spiny,E::BuzzyBeetle},{E::BuzzyBeetle},{E::Spiny,E::FlyingKoopa},{E::FlyingKoopa},{E::FlyingKoopa},{E::Spiny,E::BuzzyBeetle,E::FlyingKoopa},{E::BuzzyBeetle,E::FlyingKoopa},{E::Spiny,E::BuzzyBeetle,E::FlyingKoopa}};
    for (int r=1;r<=9;++r) {
       CHECK(BattleGame::roster(r)==expected[r-1]);
       auto g=quiet(); g.round=r;
@@ -63,15 +63,16 @@ void rosters() {
 }
 void enemyStates() {
    auto g=quiet();
-   for (auto type:{EnemyType::Spiny,EnemyType::Fly,EnemyType::Crab}) {
+   for (auto type:{EnemyType::Spiny,EnemyType::BuzzyBeetle}) {
       Enemy e; e.type=type; e.grounded=true;
-      g.hitEnemy(e);
-      if (type==EnemyType::Crab) { CHECK(e.angry && !e.stunned); e.grounded=true; g.hitEnemy(e); }
-      CHECK(e.stunned && e.recovery==g.rules.stunSeconds);
-      e.grounded=true; g.hitEnemy(e); CHECK(!e.stunned && e.speedLevel==1);
+      g.hitEnemy(e); CHECK(e.stunned && e.recovery==g.rules.stunSeconds);
+      CHECK(e.shell==(type==EnemyType::BuzzyBeetle));
+      e.grounded=true; g.hitEnemy(e); CHECK(!e.stunned && !e.shell && e.speedLevel==1);
    }
-   Enemy fly; fly.type=EnemyType::Fly; fly.grounded=false; g.hitEnemy(fly); CHECK(!fly.stunned);
-   g.hitEnemy(fly,true); CHECK(fly.stunned);
+   Enemy flying; flying.type=EnemyType::FlyingKoopa; flying.grounded=false;
+   g.hitEnemy(flying); CHECK(!flying.shell);
+   g.hitEnemy(flying,true); CHECK(flying.shell && !flying.winged && !flying.stunned);
+   CHECK(flying.recovery==g.rules.shellRecoverySeconds && flying.vx==0);
    Enemy e; e.x=240; e.y=144; e.stunned=true; e.recovery=.05f;
    g.enemies.push_back(e); tick(g,.2f);
    CHECK(!g.enemies[0].stunned && g.enemies[0].speedLevel==1);
@@ -89,17 +90,60 @@ void bumpAndKick() {
    g.players[1].x=g.items[0].x; g.players[1].y=g.items[0].y;
    g.step(dt,{});
    CHECK(g.players[1].coins==1 && g.players[0].coins==0 && g.items.empty());
-   // The core combat is reachable with ordinary controls, including climbing.
+   // A head strike bumps and stuns, but cannot carry the player through bricks.
    g=quiet(); g.players[0].x=176;
    e.x=176; e.y=344; e.grounded=true; g.enemies.push_back(e);
    std::array<Input,2> input{}; input[0].jump=true;
-   bool bumped=false, climbed=false, kicked=false;
+   bool bumped=false, kicked=false;
    for(int i=0;i<130;++i) {
       g.step(dt,input);
       for (const auto& event:g.events) { bumped|=event.type==EventType::Bump; kicked|=event.type==EventType::Kick; }
-      climbed|=g.players[0].y<344;
+      CHECK(g.players[0].y-g.players[0].height()>=344+platformThickness-.01f);
    }
-   CHECK(bumped && climbed && kicked);
+   CHECK(bumped && !kicked && g.enemies.size()==1 && g.enemies[0].stunned);
+}
+void solidPlatforms() {
+   // Both sizes and both players must bonk from below, climb around every tier,
+   // land from above, and be stopped by the vertical faces of thick bricks.
+   for (int player=0;player<2;++player) for (bool super : {false,true}) {
+      auto g=quiet();
+      auto& p=g.players[player]; p.super=super; p.x=176;
+      std::array<Input,2> in{}; in[player].jump=true;
+      const float underside=344+platformThickness;
+      bool bumped=false;
+      for (int frame=0;frame<110;++frame) {
+         g.step(dt,in);
+         CHECK(p.y-p.height()>=underside-.01f);
+         for (const auto& event:g.events) bumped|=event.type==EventType::Bump;
+      }
+      CHECK(bumped && p.grounded && p.y==floorY);
+
+      const float starts[]={floorY,344,240}, targets[]={344,240,144}, xs[]={344,140,344};
+      for (int tier=0;tier<3;++tier) {
+         p.x=xs[tier]; p.y=starts[tier]; p.vx=p.vy=0; p.grounded=true; p.jumpHeld=false;
+         in={}; in[player].jump=true;
+         in[player].left=tier!=1; in[player].right=tier==1;
+         tick(g,.8f,in);
+         CHECK(p.grounded && p.y==targets[tier]);
+      }
+      p.x=140; p.y=260; p.vx=180; p.vy=0; p.grounded=false;
+      in={}; in[player].right=true; tick(g,.1f,in);
+      CHECK(p.x<=149.01f);
+   }
+   // The central block also stops the head while activating exactly once.
+   auto g=quiet(); g.players[0].x=400;
+   std::array<Input,2> in{}; in[0].jump=true; tick(g,.6f,in);
+   CHECK(g.powCharges==2 && g.players[0].grounded && g.players[0].y==floorY);
+   // A Koopa bounce must not snap the player's head inside a low brick ceiling.
+   g=quiet(); g.koopa.x=200; g.koopa.y=floorY; g.koopa.grounded=true;
+   g.players[0].x=200; g.players[0].y=424; g.players[0].vy=100;
+   g.step(dt,{});
+   CHECK(g.koopa.shell && g.players[0].y-g.players[0].height()>=344+platformThickness);
+   // Rival contact during a jump cannot push someone through a brick side.
+   g=quiet(); g.players[0].x=331; g.players[1].x=352;
+   for (auto& p:g.players) { p.y=370; p.vy=-100; p.grounded=false; }
+   g.step(dt,{});
+   CHECK(g.players[0].x>=331 && g.players[1].x>352);
 }
 void damageAndItems() {
    auto g=quiet(); g.hurtPlayer(0); CHECK(!g.players[0].super && g.phase==Phase::Playing);
@@ -117,9 +161,9 @@ void damageAndItems() {
 }
 void powAndReplenishment() {
    auto g=quiet(); g.rules.powRespawnMin=g.rules.powRespawnMax=.1f;
-   Enemy e; e.type=EnemyType::Crab; e.x=200; e.y=144; g.enemies.push_back(e);
+   Enemy e; e.type=EnemyType::FlyingKoopa; e.x=200; e.y=144; g.enemies.push_back(e);
    g.boos.push_back({}); g.activatePow(0);
-   CHECK(g.powCharges==2 && g.boos.empty() && g.enemies[0].stunned);
+   CHECK(g.powCharges==2 && g.boos.empty() && g.enemies[0].shell && !g.enemies[0].winged && g.koopa.shell);
    g.activatePow(1); g.activatePow(0); CHECK(g.powCharges==0);
    tick(g,.2f); CHECK(g.powCharges==3);
    g=quiet(); g.rules.enemySpawnSeconds=.1f; tick(g,.2f);
@@ -142,8 +186,192 @@ void shellsAndMovement() {
    g=quiet(); g.players[0].x=799; std::array<Input,2> input{}; input[0].right=true; input[1].left=true;
    tick(g,.3f,input); CHECK(g.players[0].x<100 && g.players[1].x<615);
    auto shortJump=quiet(), longJump=quiet(); input={}; input[0].jump=true;
+   // Compare jump heights in the gap, away from the solid POW block.
+   shortJump.players[0].x=longJump.players[0].x=352;
    shortJump.step(dt,input); input[0].jump=false; tick(shortJump,.2f,input);
    input[0].jump=true; tick(longJump,.2f,input); CHECK(longJump.players[0].y<shortJump.players[0].y);
+}
+void stoppedShellRecovery() {
+   // Exercise the identical rest-only recovery rule for the arena Koopa and
+   // every regular flying Koopa after it loses its wings.
+   for (bool regular : {false,true}) {
+      auto g=quiet(); g.rules.shellRecoverySeconds=.2f;
+      for (auto& p:g.players) p.invulnerable=1000;
+      const auto check=[&](auto& shell) {
+         shell.x=400; shell.y=240; shell.grounded=true;
+         shell.shell=true; shell.vx=350; shell.recovery=.01f;
+         tick(g,.6f); CHECK(shell.shell && shell.recovery>.19f);
+         shell.x=400; shell.y=240; shell.vx=shell.vy=0; shell.grounded=true;
+         tick(g,.1f); CHECK(shell.shell && shell.recovery<.12f);
+         shell.vx=350; tick(g,.1f); CHECK(shell.shell && shell.recovery>.19f);
+         shell.x=400; shell.y=240; shell.vx=shell.vy=0; shell.grounded=true;
+         tick(g,.1f); CHECK(shell.shell);
+         tick(g,.14f); CHECK(!shell.shell && shell.speedLevel==1);
+         // Falling or bouncing at zero horizontal speed is still movement.
+         shell.shell=true; shell.x=400; shell.y=210; shell.vx=0; shell.vy=-10;
+         shell.grounded=false; shell.recovery=.01f;
+         tick(g,.1f); CHECK(shell.shell && shell.recovery>.19f);
+      };
+      if (regular) {
+         Enemy e; e.type=EnemyType::FlyingKoopa; e.winged=false;
+         g.enemies.push_back(e); check(g.enemies.front());
+      } else check(g.koopa);
+   }
+}
+void flyingKoopas() {
+   auto g=quiet();
+   Enemy e; e.type=EnemyType::FlyingKoopa; e.x=400; e.y=240; e.grounded=true;
+   e.hop=100; g.enemies.push_back(e);
+   const auto stomp=[&] {
+      auto& enemy=g.enemies[0];
+      g.players[0].x=enemy.x; g.players[0].y=enemy.y-43;
+      g.players[0].vx=0; g.players[0].vy=220; g.players[0].grounded=false;
+      enemy.touchGrace=0; tick(g,.08f);
+   };
+   stomp(); CHECK(!g.enemies[0].winged && !g.enemies[0].shell && g.players[0].super);
+   stomp(); CHECK(g.enemies[0].shell && g.enemies[0].vx==0 && g.players[0].super);
+   // A grounded shell can be kicked as a weapon, without awarding a coin.
+   auto& enemy=g.enemies[0]; enemy.touchGrace=0;
+   g.players[0].x=enemy.x-24; g.players[0].y=240; g.players[0].vy=0;
+   g.players[0].grounded=true; g.step(dt,{});
+   CHECK(enemy.shell && enemy.vx>100 && g.items.empty());
+   // Stomping a moving shell kicks it again instead of stopping it.
+   enemy.x=400; enemy.y=240; enemy.vx=350; enemy.vy=0; enemy.grounded=true; enemy.touchGrace=0;
+   g.players[0].x=410; g.players[0].y=208; g.players[0].vy=220;
+   g.players[0].vx=0; g.players[0].grounded=false;
+   tick(g,.04f); CHECK(enemy.shell && std::abs(enemy.vx)==g.rules.shellSpeed && g.players[0].super);
+   // POW also turns flying Koopas into kickable shells.
+   g.hitEnemy(enemy,true); CHECK(enemy.shell && !enemy.stunned && !enemy.winged && enemy.vx==0);
+   enemy.touchGrace=0; g.players[0].x=enemy.x-30; g.players[0].y=enemy.y; g.players[0].vy=0;
+   g.step(dt,{}); CHECK(g.enemies.size()==1 && g.items.empty() && enemy.vx>0);
+}
+void buzzyBeetles() {
+   auto g=quiet();
+   Enemy e; e.type=EnemyType::BuzzyBeetle; e.x=400; e.y=240; e.grounded=true;
+   g.enemies.push_back(e);
+   const auto stomp=[&] {
+      auto& beetle=g.enemies[0]; beetle.touchGrace=0;
+      g.players[0].x=beetle.x; g.players[0].y=beetle.y-34;
+      g.players[0].vx=0; g.players[0].vy=220; g.players[0].grounded=false;
+      tick(g,.05f);
+   };
+   stomp(); CHECK(g.enemies[0].alive && !g.enemies[0].stunned && !g.enemies[0].shell);
+   CHECK(g.players[0].super && g.enemies[0].speedLevel==0 && g.items.empty());
+   g.enemies[0].x=400; g.enemies[0].y=240; g.enemies[0].grounded=true;
+   g.bumpSegment(tileAt(g,384,240),0);
+   CHECK(g.enemies[0].stunned && g.enemies[0].shell && g.enemies[0].vx==0);
+   g.enemies[0].vy=0; g.enemies[0].grounded=true;
+   stomp(); CHECK(!g.enemies[0].stunned && !g.enemies[0].shell && g.players[0].super);
+   CHECK(g.items.empty());
+   g.hitEnemy(g.enemies[0],true);
+   g.players[0].x=g.enemies[0].x-24; g.players[0].y=g.enemies[0].y;
+   g.players[0].vy=0; g.step(dt,{});
+   CHECK(g.enemies.empty() && g.items.size()==1 && g.items[0].type==ItemType::Coin);
+   CHECK(g.players[0].coins==0); // Kicking the exposed shell generates a shared coin.
+}
+void powHitsAllKoopas() {
+   auto g=quiet();
+   g.koopa.shell=true; g.koopa.shellRecycles=1; g.koopa.vx=350;
+   for (int state=0;state<3;++state) {
+      Enemy e; e.type=EnemyType::FlyingKoopa; e.x=200+state*100; e.y=144;
+      e.winged=state==0; e.shell=state==2; e.vx=state==2?350:0;
+      e.shellRecycles=state==2?1:0; g.enemies.push_back(e);
+   }
+   g.activatePow(0);
+   CHECK(g.koopa.shell && g.koopa.vx==0 && g.koopa.vy<0 && g.koopa.shellRecycles==1);
+   for(const auto& e:g.enemies) CHECK(e.shell && !e.winged && !e.stunned && e.vx==0 && e.vy<0);
+   CHECK(g.enemies[2].shellRecycles==1 && g.items.empty());
+   // The walking arena Koopa is affected as well.
+   g.koopa.shell=false; g.activatePow(1); CHECK(g.koopa.shell && g.koopa.shellRecycles==0);
+}
+void sensitiveShellKicks() {
+   for (bool regular : {false,true}) {
+      auto g=quiet();
+      const auto check=[&](auto& shell) {
+         shell.shell=true; shell.x=400; shell.y=240; shell.vx=shell.vy=0;
+         shell.grounded=true; shell.recovery=9;
+         g.players[0].x=368; g.players[0].y=240;
+         g.players[1].x=426; g.players[1].y=240;
+         g.step(dt,{}); CHECK(shell.vx==g.rules.shellSpeed);
+         CHECK(shell.lastPlayer==0 && shell.touchGrace<=g.rules.shellKickGrace);
+         g.step(dt,{}); CHECK(!g.players[1].super); // The rival gets no kick grace.
+         shell.x=400; shell.y=240; shell.vx=shell.vy=0; shell.grounded=true;
+         shell.touchGrace=0; shell.recovery=9;
+         g.players[0].x=400; g.players[0].y=206; g.players[0].vy=220;
+         g.players[0].vx=0; g.players[0].grounded=false;
+         g.players[1].x=600; tick(g,.05f);
+         CHECK(shell.shell && std::abs(shell.vx)==g.rules.shellSpeed && g.players[0].super);
+      };
+      if (regular) {
+         Enemy e; e.type=EnemyType::FlyingKoopa; e.winged=false;
+         g.enemies.push_back(e); check(g.enemies.front());
+      } else check(g.koopa);
+   }
+}
+void shellPipeLimit() {
+   for (bool regular : {false,true}) {
+      auto g=quiet();
+      if (regular) { Enemy e; e.type=EnemyType::FlyingKoopa; e.winged=false; g.enemies.push_back(e); }
+      const auto enter=[&](auto& shell) {
+         shell.shell=true; shell.x=742; shell.y=floorY; shell.vx=350; shell.vy=0;
+         shell.direction=1; shell.grounded=true; shell.recovery=9;
+         shell.touchGrace=0; g.step(dt,{});
+      };
+      if (regular) enter(g.enemies[0]); else enter(g.koopa);
+      if (regular) CHECK(g.enemies.size()==1 && g.enemies[0].shellRecycles==1 && g.enemies[0].y==144);
+      else CHECK(g.koopa.alive && g.koopa.shellRecycles==1 && g.koopa.y==144);
+      // Kicking again doesn't restart the shell's pipe lifetime.
+      const auto rekick=[&](auto& shell) {
+         shell.x=400; shell.y=240; shell.vx=shell.vy=0; shell.grounded=true;
+         g.players[0].x=368; g.players[0].y=240;
+         g.step(dt,{}); CHECK(shell.shellRecycles==1 && shell.vx>0);
+      };
+      if (regular) rekick(g.enemies[0]); else rekick(g.koopa);
+      if (regular) enter(g.enemies[0]); else enter(g.koopa);
+      if (regular) CHECK(g.enemies.empty() && g.items.size()==1 && g.players[0].coins==0);
+      else {
+         CHECK(!g.koopa.alive && g.items.empty());
+         g.activatePow(0); CHECK(!g.koopa.alive);
+      }
+      g.startMatch(); CHECK(g.koopa.alive && !g.koopa.shell && g.koopa.shellRecycles==0);
+   }
+}
+void defeatedEnemyFlight() {
+   for (auto type : {EnemyType::Spiny,EnemyType::BuzzyBeetle}) {
+      for (int player=0;player<2;++player) for (int direction : {-1,1}) {
+         auto g=quiet();
+         Enemy enemy; enemy.type=type; enemy.x=400; enemy.y=240;
+         enemy.stunned=true; enemy.shell=type==EnemyType::BuzzyBeetle;
+         enemy.grounded=true; enemy.recovery=7;
+         g.enemies.push_back(enemy);
+         auto& p=g.players[player]; p.x=400-direction*24; p.y=240;
+         p.facing=-direction; // Kick position takes precedence over facing.
+         g.step(dt,{});
+         CHECK(g.enemies.empty() && g.defeatedEnemies.size()==1 && g.items.size()==1);
+         const auto& falling=g.defeatedEnemies[0];
+         CHECK(!falling.alive && !falling.grounded && falling.type==type);
+         CHECK(falling.x==400 && falling.y==240 && falling.vy<0);
+         CHECK(falling.vx==direction*g.rules.defeatedDriftSpeed);
+         bool belowFloor=false;
+         for (int frame=0;frame<180 && !g.defeatedEnemies.empty();++frame) {
+            g.step(dt,{});
+            if (!g.defeatedEnemies.empty()) {
+               const auto& body=g.defeatedEnemies[0];
+               CHECK((body.x-400)*direction>0 && !body.alive);
+               belowFloor|=body.y>floorY;
+            }
+         }
+         CHECK(belowFloor && g.defeatedEnemies.empty());
+         CHECK(g.items.size()==1 && g.players[0].coins==0 && g.players[1].coins==0);
+      }
+   }
+   // Defeated bodies drift past the screen edge instead of wrapping back in.
+   auto g=quiet();
+   Enemy enemy; enemy.x=4; enemy.y=144; enemy.stunned=true; enemy.recovery=7;
+   enemy.grounded=true; g.enemies.push_back(enemy);
+   g.players[0].x=28; g.players[0].y=144; g.step(dt,{}); tick(g,.1f);
+   CHECK(g.defeatedEnemies.size()==1 && g.defeatedEnemies[0].x<0);
+   g.startMatch(); CHECK(g.defeatedEnemies.empty());
 }
 void tiesAndStress() {
    auto g=quiet(); g.players[0].coins=4; g.players[1].coins=4;
@@ -160,14 +388,20 @@ void tiesAndStress() {
          for (auto& p:in) { auto n=random(); p.left=n&1; p.right=n&2; p.jump=n&4; p.dash=n&8; p.down=n&16; }
          for (auto& p:s.players) p.invulnerable=2;
          s.step(dt,in);
-         for (const auto& p:s.players) CHECK(std::isfinite(p.x) && std::isfinite(p.y) && p.x>=0 && p.x<800 && p.y<=448);
+         for (const auto& p:s.players) {
+            CHECK(std::isfinite(p.x) && std::isfinite(p.y) && p.x>=0 && p.x<800 && p.y<=448);
+            for (const auto& tile:s.segments) for (float offset : {-width,0.f,width})
+               CHECK(!(p.x+11>tile.x+offset+.01f && p.x-11<tile.x+offset+32-.01f &&
+                       p.y>tile.y+.01f && p.y-p.height()<tile.y+platformThickness-.01f));
+         }
          CHECK(static_cast<int>(s.enemies.size())<=s.rules.enemyLimit);
       }
    }
 }
 }
 int main() {
-   matchRules(); rosters(); enemyStates(); bumpAndKick(); damageAndItems();
-   powAndReplenishment(); shellsAndMovement(); tiesAndStress();
+   matchRules(); rosters(); enemyStates(); bumpAndKick(); solidPlatforms(); damageAndItems();
+   powAndReplenishment(); shellsAndMovement(); stoppedShellRecovery(); flyingKoopas(); buzzyBeetles();
+   powHitsAllKoopas(); sensitiveShellKicks(); shellPipeLimit(); defeatedEnemyFlight(); tiesAndStress();
    std::cout << "Battle rules: all checks passed (including 162,000 simulation steps).\n";
 }

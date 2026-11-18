@@ -35,7 +35,8 @@ private:
    void render();
    void rect(int x, int y, int w, int h, SDL_Color color);
    void text(const std::string& value, int x, int y, int size, SDL_Color color, bool centered = false);
-   void sprite(SDL_Texture* texture, SDL_Rect source, SDL_Rect dest, bool flip = false, bool upsideDown = false);
+   void sprite(SDL_Texture* texture, SDL_Rect source, SDL_Rect dest, bool flip = false, bool upsideDown = false,
+               bool wrapHorizontal = true);
    void drawPlayer(const battle::Player& player, int index);
    void drawEnemy(const battle::Enemy& enemy);
    void drawBoo(const battle::Boo& boo);
