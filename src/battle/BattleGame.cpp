@@ -43,6 +43,12 @@ template<class T> void kickKoopa(T& koopa, const Player& player, int index, cons
    koopa.touchGrace = rules.shellKickGrace; koopa.lastPlayer = index;
 }
 
+template<class T> void emergeFromPipe(T& body, bool right) {
+   body.x = right ? 736 : 64; body.y = 144;
+   body.direction = right ? -1 : 1;
+   body.vy = 0; body.grounded = true;
+}
+
 } // namespace
 
 BattleGame::BattleGame(uint32_t seed, Rules settings) : rules(settings), random(seed) { startMatch(); }
@@ -83,14 +89,14 @@ void BattleGame::resetRound() {
       if (tile < 10 || tile >= 15) segments.push_back({tile * 32.f, 344});
    }
    segments[static_cast<unsigned>(range(0, static_cast<float>(segments.size())))].hiddenItem = true;
-   koopa = {}; koopa.x = 400; koopa.y = 240; koopa.grounded = true;
+   koopa = {}; koopa.alive = false; koopaPending = true;
+   koopaTimer = rules.koopaSpawnSeconds;
    powCharges = 3; powTimer = 0;
    phase = Phase::Ready; winner = -1; coinVictory = false;
    readyTimer = rules.readySeconds; shake = 0;
    enemyTimer = rules.enemySpawnSeconds; booTimer = rules.booSpawnSeconds;
    itemTimer = rules.itemSpawnSeconds; nextPipeRight = false;
    nextBooDiagonal = false;
-   spawnEnemy();
 }
 void BattleGame::emit(EventType type, float x, float y, int player) {
    events.push_back({type, x, y, player});
@@ -99,8 +105,7 @@ void BattleGame::spawnEnemy() {
    const auto choices = roster(round);
    Enemy e;
    e.type = choices[std::uniform_int_distribution<unsigned>(0, choices.size() - 1)(random)];
-   e.x = nextPipeRight ? 704 : 96; e.y = 144; e.grounded = true;
-   e.direction = nextPipeRight ? -1 : 1;
+   emergeFromPipe(e, nextPipeRight);
    nextPipeRight = !nextPipeRight;
    e.hop = range(.5f, 1.4f);
    enemies.push_back(e);
@@ -108,8 +113,7 @@ void BattleGame::spawnEnemy() {
 void BattleGame::spawnItem(ItemType type) {
    Item item;
    item.type = type;
-   item.x = nextPipeRight ? 704 : 96; item.y = 144; item.grounded = true;
-   item.direction = nextPipeRight ? -1 : 1;
+   emergeFromPipe(item, nextPipeRight);
    nextPipeRight = !nextPipeRight;
    items.push_back(item);
 }
@@ -131,17 +135,18 @@ void BattleGame::moveBody(Body& b, float halfWidth, float dt) {
 void BattleGame::updatePlayer(int index, const Input& in, float dt) {
    auto& p = players[index];
    p.invulnerable = std::max(0.f, p.invulnerable - dt);
-   p.crouched = in.down && p.super && p.grounded;
-   const int direction = static_cast<int>(in.right) - static_cast<int>(in.left);
+   const bool stunned = p.stunTimer > 0;
+   p.crouched = p.forcedCrouchTimer > 0 || (!stunned && p.super && p.grounded && in.down);
+   const int direction = stunned ? 0 : static_cast<int>(in.right) - static_cast<int>(in.left);
    const float target = (p.crouched ? 0 : direction) * (in.dash ? rules.dashSpeed : rules.walkSpeed);
    p.vx = approach(p.vx, target, (direction ? rules.acceleration : rules.friction) * dt);
    if (direction) p.facing = direction;
-   if (in.jump && !p.jumpHeld && p.grounded) {
+   if (!stunned && in.jump && !p.jumpHeld && p.grounded) {
       p.vy = -rules.jumpSpeed; p.grounded = false; p.crouched = false;
       emit(EventType::Jump, p.x, p.y, index);
    }
    p.jumpHeld = in.jump;
-   if (in.jump && p.vy < 0) p.vy -= rules.gravity * (1 - rules.heldJumpGravity) * dt;
+   if (!stunned && in.jump && p.vy < 0) p.vy -= rules.gravity * (1 - rules.heldJumpGravity) * dt;
    constexpr float halfWidth = 11;
    const float height = p.height();
    const float oldX = p.x;
@@ -248,6 +253,7 @@ void BattleGame::bumpSegment(unsigned index, int player) {
    }
    const int other = 1 - player;
    if (players[other].grounded && std::abs(players[other].y - s.y) < 2 && std::abs(players[other].x - s.x - 16) < 27) {
+      stunPlayer(other, rules.platformStunSeconds, false);
       players[other].vy = -260; players[other].grounded = false;
    }
    if (s.hiddenItem) {
@@ -305,7 +311,7 @@ void BattleGame::updateEnemies(float dt) {
             }
             ++e.shellRecycles;
          }
-         e.x = e.direction > 0 ? 96 : 704; e.y = 144; e.vy = 0; e.grounded = true;
+         emergeFromPipe(e, e.direction < 0);
       }
    }
    if (koopa.alive) {
@@ -321,7 +327,7 @@ void BattleGame::updateEnemies(float dt) {
             else ++koopa.shellRecycles;
          }
          if (koopa.alive) {
-            koopa.x = koopa.direction > 0 ? 96 : 704; koopa.y = 144; koopa.vy = 0;
+            emergeFromPipe(koopa, koopa.direction < 0);
          }
       }
    }
@@ -343,7 +349,7 @@ void BattleGame::updateItems(float dt) {
       moveBody(item, 9, dt);
       // Unclaimed coins keep cycling; they have no owner and never expire.
       if (item.grounded && item.y == floorY && (item.x < 58 || item.x > 742)) {
-         item.x = item.direction > 0 ? 96 : 704; item.y = 144; item.vy = 0;
+         emergeFromPipe(item, item.direction < 0);
       }
    }
 }
@@ -376,7 +382,10 @@ void BattleGame::updateBoos(float dt) {
          wrap(boo); boo.y += boo.vy * dt;
          if (boo.y < 120) { boo.y = 120; boo.vy = std::abs(boo.vy); }
          if (boo.y > floorY - 12) { boo.y = floorY - 12; boo.vy = -std::abs(boo.vy); }
-      } else boo.y = boo.baseY + std::sin(boo.age * rules.booWaveFrequency) * rules.booWaveAmplitude;
+      } else {
+         const float entrance = std::min(boo.age / 2, 1.f);
+         boo.y = 144 + (boo.baseY - 144 + std::sin(boo.age * rules.booWaveFrequency) * rules.booWaveAmplitude) * entrance;
+      }
    }
    boos.erase(std::remove_if(boos.begin(), boos.end(), [this](const Boo& b) {
       return (!b.diagonal && b.x > width + 32) || b.age > rules.booLifetime;
@@ -384,10 +393,11 @@ void BattleGame::updateBoos(float dt) {
 }
 void BattleGame::hurtPlayer(int index) {
    if (phase != Phase::Playing) return;
+   if (rules.invinciblePlayers) return;
    auto& p = players[index];
    if (p.invulnerable > 0 || p.eliminated) return;
    if (p.super) {
-      p.super = false; p.crouched = false; p.invulnerable = rules.invulnerabilitySeconds;
+      p.super = false; p.crouched = p.forcedCrouchTimer > 0; p.invulnerable = rules.invulnerabilitySeconds;
       p.vy = -190; p.grounded = false;
       emit(EventType::Hurt, p.x, p.y, index);
    } else {
@@ -408,7 +418,10 @@ void BattleGame::collectItem(Item& item, int index) {
       if (a.super == b.super) {
          // Swap complete spatial state so grounded flags/velocity stay coherent.
          std::swap(static_cast<Body&>(a), static_cast<Body&>(b));
-      } else { std::swap(a.super, b.super); a.crouched = b.crouched = false; }
+      } else {
+         std::swap(a.super, b.super);
+         a.crouched = a.forcedCrouchTimer > 0; b.crouched = b.forcedCrouchTimer > 0;
+      }
       emit(EventType::Swap, p.x, p.y, index);
    }
 }
@@ -422,13 +435,15 @@ void BattleGame::winRound(int index, bool coins) {
       emit(EventType::MatchWin, players[index].x, players[index].y, index);
    }
 }
-void BattleGame::collisions(float dt) {
+void BattleGame::collisions(float dt, const std::array<Player, 2>& previous) {
    // Ties use a documented deterministic rule: coins before damage, Mario first
    // for simultaneous collection. Stop as soon as a round has been awarded.
    for (auto& item : items) {
       for (int i = 0; i < 2 && phase == Phase::Playing; ++i)
          if (item.alive && overlap(players[i], 24, players[i].height(), item, 24, 26)) collectItem(item, i);
    }
+   if (phase != Phase::Playing) return;
+   collidePlayers(previous);
    for (int i = 0; i < 2 && phase == Phase::Playing; ++i) {
       auto& p = players[i];
       for (auto& e : enemies) {
@@ -481,7 +496,28 @@ void BattleGame::collisions(float dt) {
       for (const auto& boo : boos)
          if (overlap(p, 20, p.height(), boo, 26, 28)) hurtPlayer(i);
    }
-   if (phase != Phase::Playing) return;
+}
+void BattleGame::stunPlayer(int index, float seconds, bool crouch) {
+   auto& p = players[index];
+   p.stunTimer = std::max(p.stunTimer, seconds);
+   if (crouch) p.forcedCrouchTimer = std::max(p.forcedCrouchTimer, seconds);
+   p.crouched = p.crouched || crouch; p.vx = 0;
+   emit(EventType::Stun, p.x, p.y, index);
+}
+void BattleGame::collidePlayers(const std::array<Player, 2>& previous) {
+   for (int attacker = 0; attacker < 2; ++attacker) {
+      const int victim = 1 - attacker;
+      auto& a = players[attacker]; const auto& b = players[victim];
+      const float top = b.y - b.height();
+      const float previousTop = previous[victim].y - previous[victim].height();
+      float dx = std::abs(a.x - b.x); dx = std::min(dx, width - dx);
+      const bool descending = a.vy > 0 && a.y - previous[attacker].y > top - previousTop;
+      if (descending && dx < 24 && previous[attacker].y <= previousTop + 2 && a.y >= top) {
+         stunPlayer(victim, rules.stompStunSeconds, true);
+         bouncePlayer(attacker, top);
+         return;
+      }
+   }
    auto& a = players[0]; auto& b = players[1];
    if (overlap(a, 24, a.height(), b, 24, b.height())) {
       float dx = b.x - a.x;
@@ -518,8 +554,13 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
    if (phase != Phase::Playing) return;
    shake = std::max(0.f, shake - dt);
    for (auto& s : segments) s.bump = std::max(0.f, s.bump - dt);
+   const auto previousPlayers = players;
+   for (auto& p : players) {
+      p.stunTimer = std::max(0.f, p.stunTimer - dt);
+      p.forcedCrouchTimer = std::max(0.f, p.forcedCrouchTimer - dt);
+   }
    for (int i = 0; i < 2; ++i) updatePlayer(i, inputs[i], dt);
-   updateEnemies(dt); updateItems(dt); updateBoos(dt); collisions(dt);
+   updateEnemies(dt); updateItems(dt); updateBoos(dt); collisions(dt, previousPlayers);
    enemies.erase(std::remove_if(enemies.begin(), enemies.end(), [](const Enemy& e) { return !e.alive; }), enemies.end());
    items.erase(std::remove_if(items.begin(), items.end(), [](const Item& i) { return !i.alive; }), items.end());
    if (phase != Phase::Playing) return;
@@ -528,8 +569,15 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
       if (static_cast<int>(enemies.size()) < rules.enemyLimit) spawnEnemy();
       enemyTimer = rules.enemySpawnSeconds;
    }
+   if (koopaPending) {
+      koopaTimer -= dt;
+      if (koopaTimer <= 0) {
+         koopa = {}; emergeFromPipe(koopa, nextPipeRight);
+         nextPipeRight = !nextPipeRight; koopaPending = false;
+      }
+   }
    if (booTimer <= 0) {
-      Boo boo; boo.x = 0; boo.baseY = range(180, 365); boo.y = boo.baseY;
+      Boo boo; boo.x = 64; boo.baseY = range(180, 365); boo.y = 144;
       boo.diagonal = nextBooDiagonal; nextBooDiagonal = !nextBooDiagonal;
       boo.vx = boo.diagonal ? rules.booDiagonalSpeed : rules.booWaveSpeed;
       boo.vy = rules.booVerticalSpeed; boos.push_back(boo);

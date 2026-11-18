@@ -5,6 +5,7 @@
 
 class Core {
 public:
+   explicit Core(bool testMode = false) : testMode(testMode) {}
    int init();
    void run();
    void mainLoop();
@@ -12,4 +13,5 @@ public:
 private:
    std::unique_ptr<BattleScene> scene;
    bool running = true;
+   bool testMode;
 };

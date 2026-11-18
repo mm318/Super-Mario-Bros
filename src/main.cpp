@@ -3,6 +3,7 @@
 #endif
 #define SDL_MAIN_HANDLED
 #include "Core.h"
+#include <cstring>
 
 #ifndef __EMSCRIPTEN__
 #include <filesystem>
@@ -26,7 +27,10 @@ void runLoop(void* data) {
 }
 #endif
 
-int main() {
+int main(int argc, char** argv) {
+   bool testMode = false;
+   for (int i = 1; i < argc; ++i)
+      if (std::strcmp(argv[i], "--test") == 0) testMode = true;
    SDL_SetMainReady();
 #ifndef __EMSCRIPTEN__
    char* base = SDL_GetBasePath();
@@ -43,7 +47,7 @@ int main() {
       return 1;
    }
 #endif
-   Core core;
+   Core core(testMode);
 
 #ifdef __EMSCRIPTEN__
    emscripten_set_main_loop_arg(runLoop, &core, 0, 1);

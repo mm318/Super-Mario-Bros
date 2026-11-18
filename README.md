@@ -11,7 +11,10 @@ background, HUD, menus, status indicators and particles are drawn in code.
 
 Defeat enemies to create **shared coins**, race to collect five, or eliminate the
 other player. Win five rounds to earn a match star. There is one fixed, wrapping
-arena, continuous enemy replenishment, and no campaign or bonus stages.
+arena, continuous enemy replenishment, and no campaign or bonus stages. Every
+round starts empty: after the ready countdown, regular enemies enter through
+upper pipes every 2.8 seconds, the arena Koopa arrives after 5.6 seconds, and
+Lakitu/Boo hazards begin entering from the left upper pipe after 14 seconds.
 
 ## Play
 
@@ -51,6 +54,11 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
   only the player who kicked it; the rival can be hit immediately.
 - Recovered enemies move faster. Bumping a stunned enemy turns it upright early
   and increases its speed. Spinies also change color.
+- Stomping a rival forces them to crouch and stuns them for 0.5 seconds. Hitting
+  the block beneath a rival stuns them for 1 second and bumps them upward.
+  Movement, dash and jump input are locked while stunned; gravity still applies.
+  These effects work on both player sizes, during damage invulnerability, and in
+  test mode. A `STUN` label marks the affected player.
 - Both players start every round Super. Damage makes them Small, with brief
   invulnerability; another hit eliminates them and immediately awards the round.
 - The arena's original green Koopa follows the same shell rules but never awards
@@ -68,10 +76,22 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
   sizes match, or exchange their sizes when they differ. Both use the unmodified
   overworld mushroom sprite, without a ? overlay.
 - Coins and enemies recycle through the lower pipes. Unclaimed coins don't expire.
-- The original nine-round roster uses Buzzy Beetles in every former Crab slot,
-  and flying Koopas in every former Fighter Fly slot. First to five round wins
-  ends the match, after five to nine rounds. A player's sixth star resets their
-  displayed stars to zero.
+- First to five round wins ends the match, after five to nine rounds. A player's
+  sixth star resets their displayed stars to zero.
+
+| Round | Regular enemies |
+| --- | --- |
+| 1 | Spiny |
+| 2 | Spiny, Buzzy Beetle |
+| 3 | Buzzy Beetle |
+| 4 | Spiny, Flying Koopa |
+| 5 | Flying Koopa |
+| 6 | Flying Koopa |
+| 7 | Spiny, Buzzy Beetle, Flying Koopa |
+| 8 | Buzzy Beetle, Flying Koopa |
+| 9 | Spiny, Buzzy Beetle, Flying Koopa |
+
+Every round also has the single arena Koopa and recurring Lakitu/Boo hazards.
 
 Stars are stored in SDL's application preferences directory under
 `SuperMarioBros/BattleGame/stars.txt` on desktop and in this browser origin's
@@ -87,6 +107,19 @@ sudo apt install libxext-dev libgles-dev libglx-dev libpulse-dev
 zig build
 zig build -Doptimize=safe run
 ```
+
+To test the game with both players invincible:
+
+```sh
+zig build -Doptimize=safe run -- --test
+# Or launch the installed executable directly:
+./zig-out/bin/super-mario-bros --test
+```
+
+`--test` makes Mario and Luigi immune to enemy, shell and hazard damage in either
+size. It stays enabled across rounds, matches and restarts for that session.
+The footer shows `TEST: BOTH INVINCIBLE`. Player stomps and platform bumps still
+stun players, and coin victories still end rounds. Omit the flag to play normally.
 
 The executable is `zig-out/bin/super-mario-bros` (`.exe` on Windows), retaining
 the existing artifact name. The default window is 1600 × 960, with an 800 × 480
@@ -125,12 +158,13 @@ music, and Windows icon/resource script. Campaign level data, screenshots,
 menu artwork, tile mappings and unused audio have been removed.
 
 Tests cover five-coin wins, five-to-nine-round matches, star rollover, all nine
-rosters, enemy state transitions, solid platform head/side collisions and edge
+rosters, empty round starts and delayed pipe entrances, enemy state transitions, solid platform head/side collisions and edge
 climbing in both player sizes, jump/bump/kick behavior, contested
 coins, damage, both ? Mushroom cases, POW exhaustion/regeneration, spawning,
 Buzzy Beetle immunity/revival/finishing kicks, Koopa wing removal, POW effects,
 side/stomp shell launches, per-player kick grace, one-recycle shell retirement,
-recovery after continuous rest, variable jumps, wrapping, simultaneous input and 162,000
+recovery after continuous rest, player stomp/bump stun durations, forced crouching,
+test-mode immunity for both players, variable jumps, wrapping, simultaneous input and 162,000
 stress simulation steps. CI builds native and web configurations and runs rules
 tests. The rules tests can also run with AddressSanitizer/UBSan via a C++17 compiler.
 

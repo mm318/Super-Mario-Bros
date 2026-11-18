@@ -8,7 +8,7 @@
 
 class BattleScene {
 public:
-   BattleScene();
+   explicit BattleScene(bool testMode = false);
    ~BattleScene();
    void handleEvent(const SDL_Event& event);
    void update();

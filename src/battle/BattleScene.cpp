@@ -17,7 +17,8 @@ SDL_Rect enemySource(int id, int h = 16) { return {1+(id%35)*16, 1+(id/35)*16, 1
 SDL_Rect blockSource(int id) { return {1+(id%48)*17, 1+(id/48)*17, 16, 16}; }
 const char* name(int i) { return i == 0 ? "MARIO" : "LUIGI"; }
 }
-BattleScene::BattleScene() : game(static_cast<uint32_t>(std::time(nullptr))) {
+BattleScene::BattleScene(bool testMode) : game(static_cast<uint32_t>(std::time(nullptr))) {
+   game.rules.invinciblePlayers = testMode;
    auto& t = TextureManager::Get(); renderer = t.getRenderer();
    SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
    playerTexture = t.LoadSharedTexture("res/sprites/characters/PlayerSpriteSheet.png");
@@ -197,10 +198,10 @@ void BattleScene::drawPlayer(const battle::Player& p,int i) {
    const int h=static_cast<int>(p.height()), w=p.super&&!p.crouched?24:28;
    int frame=std::abs(p.vx)>20 ? 1+static_cast<int>(animation*(std::abs(p.vx)>190?15:9))%3 : 0;
    if (!p.grounded) frame=5;
-   if (p.crouched) frame=6;
+   if (p.crouched) frame=p.super?6:0;
    SDL_Rect src{1+frame*16,9+(i*4+(p.super?1:0))*16,16,p.super?32:16};
    sprite(playerTexture.get(),src,{static_cast<int>(p.x)-w/2,static_cast<int>(p.y)-h,w,h},p.facing<0);
-   text(i==0?"1":"2",static_cast<int>(p.x),static_cast<int>(p.y)-h-13,8,i==0?red:green,true);
+   text(p.stunTimer>0?"STUN":i==0?"1":"2",static_cast<int>(p.x),static_cast<int>(p.y)-h-13,8,p.stunTimer>0?gold:i==0?red:green,true);
 }
 void BattleScene::drawEnemy(const battle::Enemy& e) {
    const int x=static_cast<int>(e.x), y=static_cast<int>(e.y), frame=e.alive?static_cast<int>(animation*7)%2:0;
@@ -303,7 +304,6 @@ void BattleScene::render() {
       sprite(blockTexture.get(),blockSource(306),{static_cast<int>(s.x),y,32,static_cast<int>(battle::platformThickness)});
    }
    for (int x=0;x<800;x+=32) sprite(blockTexture.get(),blockSource(306),{x,448,32,32});
-   drawPipe(0,80,false); drawPipe(736,80,true); drawPipe(0,384,false); drawPipe(736,384,true);
    if (game.powCharges) {
       rect(380,344,40,32,{8,10,22,255}); rect(383,346,34,27,{75,131,221,255}); text("POW",400,352,10,white,true);
       for (int i=0;i<game.powCharges;++i) rect(385+i*10,367,8,3,white);
@@ -313,12 +313,14 @@ void BattleScene::render() {
    if (game.koopa.alive) sprite(enemyTexture.get(),enemySource(game.koopa.shell?77:38+static_cast<int>(animation*7)%2,game.koopa.shell?16:32),
       {static_cast<int>(game.koopa.x)-14,static_cast<int>(game.koopa.y)-(game.koopa.shell?28:48),28,game.koopa.shell?28:48},game.koopa.direction>0);
    for (const auto& b : game.boos) drawBoo(b);
+   drawPipe(0,80,false); drawPipe(736,80,true); drawPipe(0,384,false); drawPipe(736,384,true);
    for (int i=0;i<2;++i) drawPlayer(game.players[i],i);
    for (const auto& e : game.defeatedEnemies) drawEnemy(e);
    for (const auto& p : particles) rect(static_cast<int>(p.x),static_cast<int>(p.y),4,4,p.color);
    SDL_RenderSetViewport(renderer,&originalViewport); drawHud();
    rect(0,464,800,16,ink);
-   text("ESC PAUSE   TAB RULES   M "+std::string(muted?"UNMUTE":"MUTE")+"   F11 FULLSCREEN",400,468,8,dim,true);
+   text("ESC PAUSE   TAB RULES   M "+std::string(muted?"UNMUTE":"MUTE")+"   F11 FULLSCREEN"+
+        (game.rules.invinciblePlayers?"   TEST: BOTH INVINCIBLE":""),400,468,8,dim,true);
    if (noticeTimer>0) text(notice,400,83,10,gold,true);
    if (title) {
       drawPanel("SUPER MARIO BROS.",gold); text("BATTLE GAME",400,155,32,white,true);

@@ -13,7 +13,7 @@ int Core::init() {
       std::cerr << "Error Initializing Sound Manager" << std::endl;
       return -1;
    }
-   scene = std::make_unique<BattleScene>();
+   scene = std::make_unique<BattleScene>(testMode);
    return 0;
 }
 

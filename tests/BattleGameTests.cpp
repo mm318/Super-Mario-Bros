@@ -10,9 +10,9 @@ void tick(BattleGame& g, float seconds, std::array<Input,2> in={}) {
    for (int i=0;i<static_cast<int>(seconds/dt);++i) g.step(dt,in);
 }
 BattleGame quiet() {
-   Rules r; r.enemySpawnSeconds=r.booSpawnSeconds=r.itemSpawnSeconds=10000;
+   Rules r; r.enemySpawnSeconds=r.booSpawnSeconds=r.itemSpawnSeconds=r.koopaSpawnSeconds=10000;
    BattleGame g(42,r); g.phase=Phase::Playing; g.enemies.clear();
-   g.koopa.x=750; g.koopa.y=144;
+   g.koopa.alive=true; g.koopa.x=750; g.koopa.y=144;
    return g;
 }
 unsigned tileAt(const BattleGame& g,float x,float y) {
@@ -333,7 +333,7 @@ void shellPipeLimit() {
          CHECK(!g.koopa.alive && g.items.empty());
          g.activatePow(0); CHECK(!g.koopa.alive);
       }
-      g.startMatch(); CHECK(g.koopa.alive && !g.koopa.shell && g.koopa.shellRecycles==0);
+      g.startMatch(); CHECK(!g.koopa.alive && !g.koopa.shell && g.koopa.shellRecycles==0);
    }
 }
 void defeatedEnemyFlight() {
@@ -373,6 +373,115 @@ void defeatedEnemyFlight() {
    CHECK(g.defeatedEnemies.size()==1 && g.defeatedEnemies[0].x<0);
    g.startMatch(); CHECK(g.defeatedEnemies.empty());
 }
+void invinciblePlayersTestMode() {
+   for (int player=0;player<2;++player) {
+      auto normal=quiet(); normal.hurtPlayer(player); CHECK(!normal.players[player].super);
+      normal.players[player].invulnerable=0; normal.hurtPlayer(player);
+      CHECK(normal.players[player].eliminated && normal.winner==1-player);
+      auto g=quiet(); g.rules.invinciblePlayers=true;
+      for (bool super : {false,true}) {
+         auto& p=g.players[player]; p.super=super;
+         for (int hit=0;hit<10;++hit) g.hurtPlayer(player);
+         CHECK(p.super==super && !p.eliminated && p.invulnerable==0);
+         Enemy enemy; enemy.x=p.x; enemy.y=floorY;
+         g.enemies.push_back(enemy); g.step(dt,{}); g.enemies.clear();
+         g.koopa.shell=true; g.koopa.x=p.x-4; g.koopa.y=floorY;
+         g.koopa.vx=350; g.koopa.recovery=9; g.step(dt,{});
+         Boo boo; boo.x=p.x; boo.y=436; boo.diagonal=true;
+         g.boos.push_back(boo); g.step(dt,{}); g.boos.clear();
+         CHECK(p.super==super && !p.eliminated && g.phase==Phase::Playing);
+      }
+      for (int coin=0;coin<5;++coin) { Item item; g.collectItem(item,0); }
+      CHECK(g.phase==Phase::RoundOver && g.winner==0);
+      g.nextRound(); g.phase=Phase::Playing;
+      for (int i=0;i<2;++i) { g.hurtPlayer(i); CHECK(g.players[i].super && !g.players[i].eliminated); }
+      for (int coin=0;coin<5;++coin) { Item item; g.collectItem(item,1); }
+      CHECK(g.phase==Phase::RoundOver && g.winner==1);
+      g.startMatch(); g.phase=Phase::Playing;
+      for (int i=0;i<2;++i) { g.hurtPlayer(i); CHECK(g.players[i].super && !g.players[i].eliminated); }
+      CHECK(g.rules.invinciblePlayers);
+   }
+}
+void playerStompsAndStuns() {
+   for (bool testMode : {false,true}) for (bool super : {false,true})
+   for (bool damageGrace : {false,true}) for (int attacker=0;attacker<2;++attacker) {
+      auto g=quiet(); g.rules.invinciblePlayers=testMode;
+      const int victim=1-attacker;
+      auto& target=g.players[victim]; auto& stomper=g.players[attacker];
+      target.x=352; target.y=floorY; target.super=super;
+      target.invulnerable=damageGrace?9:0;
+      stomper.x=352; stomper.y=target.y-target.height()-8;
+      stomper.vy=220; stomper.grounded=false;
+      for (int frame=0;frame<30 && target.stunTimer==0;++frame) g.step(dt,{});
+      CHECK(target.stunTimer>=.49f && target.forcedCrouchTimer>=.49f);
+      CHECK(target.crouched && target.height()==(super?28:20) && target.super==super);
+      CHECK(!target.eliminated && stomper.vy<0);
+      stomper.x=100; stomper.y=floorY; stomper.vx=stomper.vy=0; stomper.grounded=true;
+      std::array<Input,2> trying{};
+      trying[victim].right=trying[victim].jump=trying[victim].dash=true;
+      tick(g,.4f,trying);
+      CHECK(target.x==352 && target.vx==0 && target.y==floorY && target.crouched);
+      CHECK(target.stunTimer>0 && target.forcedCrouchTimer>0);
+      tick(g,.15f);
+      CHECK(target.stunTimer==0 && target.forcedCrouchTimer==0 && !target.crouched);
+      g.step(dt,trying); CHECK(target.vx>0 && target.vy<0);
+      g.startMatch(); CHECK(g.players[victim].stunTimer==0 && g.players[victim].forcedCrouchTimer==0);
+   }
+   // Side contact doesn't count as a stomp.
+   auto g=quiet(); g.players[0].x=352; g.players[1].x=374;
+   g.step(dt,{}); CHECK(g.players[0].stunTimer==0 && g.players[1].stunTimer==0);
+}
+void platformPlayerStuns() {
+   for (bool testMode : {false,true}) for (bool super : {false,true}) for (int attacker=0;attacker<2;++attacker) {
+      auto g=quiet(); g.rules.invinciblePlayers=testMode;
+      const int victim=1-attacker;
+      auto& target=g.players[victim]; auto& bumper=g.players[attacker];
+      target.x=176; target.y=344; target.super=super; target.invulnerable=9;
+      bumper.x=176; std::array<Input,2> in{}; in[attacker].jump=true;
+      for (int frame=0;frame<60 && target.stunTimer==0;++frame) g.step(dt,in);
+      CHECK(target.stunTimer>=.99f && target.forcedCrouchTimer==0 && target.vy<0);
+      CHECK(target.super==super && !target.crouched && !target.eliminated);
+      bumper.x=700; bumper.y=floorY; bumper.vx=bumper.vy=0; bumper.grounded=true;
+      in={}; in[victim].right=in[victim].jump=in[victim].dash=true;
+      tick(g,.8f,in);
+      CHECK(target.x==176 && target.vx==0 && target.y==344 && target.stunTimer>.15f);
+      tick(g,.25f); CHECK(target.stunTimer==0);
+      g.step(dt,in); CHECK(target.vx>0 && target.vy<0);
+   }
+   // A later stomp forces half a second of ducking without shortening a longer stun.
+   auto g=quiet(); g.players[1].x=352; g.players[1].y=240;
+   g.bumpSegment(tileAt(g,352,240),0);
+   g.players[1].y=240; g.players[1].vy=0; g.players[1].grounded=true;
+   g.players[0].x=352; g.players[0].y=184; g.players[0].vy=220; g.players[0].grounded=false;
+   for (int frame=0;frame<30 && g.players[1].forcedCrouchTimer==0;++frame) g.step(dt,{});
+   CHECK(g.players[1].stunTimer>.8f && g.players[1].forcedCrouchTimer>=.49f);
+   g.players[0].x=100; g.players[0].y=floorY; g.players[0].vx=g.players[0].vy=0;
+   tick(g,.6f);
+   CHECK(g.players[1].stunTimer>0 && g.players[1].forcedCrouchTimer==0 && !g.players[1].crouched);
+}
+void emptyRoundsAndPipeSpawns() {
+   Rules rules; rules.readySeconds=.05f; rules.enemySpawnSeconds=.1f;
+   rules.koopaSpawnSeconds=.2f; rules.booSpawnSeconds=.3f; rules.itemSpawnSeconds=10000;
+   for (int round=1;round<=9;++round) {
+      BattleGame g(round,rules); g.round=round;
+      CHECK(g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+      tick(g,.08f); tick(g,.05f);
+      CHECK(g.phase==Phase::Playing && g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+      for (int frame=0;frame<30 && g.enemies.empty();++frame) g.step(dt,{});
+      CHECK(g.enemies.size()==1 && g.enemies[0].y==144 && !g.koopa.alive);
+      CHECK((g.enemies[0].x==64 && g.enemies[0].direction==1) ||
+            (g.enemies[0].x==736 && g.enemies[0].direction==-1));
+      for (int frame=0;frame<30 && !g.koopa.alive;++frame) g.step(dt,{});
+      CHECK(g.koopa.alive && g.koopa.y==144 && (g.koopa.x==64 || g.koopa.x==736));
+      CHECK(g.boos.empty());
+      for (int frame=0;frame<30 && g.boos.empty();++frame) g.step(dt,{});
+      CHECK(g.boos.size()==1 && g.boos[0].x==64 && g.boos[0].y==144);
+      g.koopa.alive=false; tick(g,.3f); CHECK(!g.koopa.alive);
+      g.phase=Phase::RoundOver; g.nextRound();
+      CHECK(g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+      g.startMatch(); CHECK(g.enemies.empty() && !g.koopa.alive && g.boos.empty());
+   }
+}
 void tiesAndStress() {
    auto g=quiet(); g.players[0].coins=4; g.players[1].coins=4;
    g.players[1].x=g.players[0].x;
@@ -402,6 +511,8 @@ void tiesAndStress() {
 int main() {
    matchRules(); rosters(); enemyStates(); bumpAndKick(); solidPlatforms(); damageAndItems();
    powAndReplenishment(); shellsAndMovement(); stoppedShellRecovery(); flyingKoopas(); buzzyBeetles();
-   powHitsAllKoopas(); sensitiveShellKicks(); shellPipeLimit(); defeatedEnemyFlight(); tiesAndStress();
+   powHitsAllKoopas(); sensitiveShellKicks(); shellPipeLimit(); defeatedEnemyFlight();
+   invinciblePlayersTestMode(); playerStompsAndStuns(); platformPlayerStuns();
+   emptyRoundsAndPipeSpawns(); tiesAndStress();
    std::cout << "Battle rules: all checks passed (including 162,000 simulation steps).\n";
 }

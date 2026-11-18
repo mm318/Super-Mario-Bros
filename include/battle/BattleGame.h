@@ -9,10 +9,13 @@
 // in seconds and logical pixels, rather than pretending to be SNES constants.
 namespace battle {
 struct Rules {
+   bool invinciblePlayers = false;
    float gravity = 1600, jumpSpeed = 520, heldJumpGravity = .60f;
    float acceleration = 1500, friction = 1800, walkSpeed = 180, dashSpeed = 280;
    float stunSeconds = 7, invulnerabilitySeconds = 1.8f;
+   float stompStunSeconds = .5f, platformStunSeconds = 1;
    float enemySpawnSeconds = 2.8f, booSpawnSeconds = 14, itemSpawnSeconds = 17;
+   float koopaSpawnSeconds = 5.6f;
    float powRespawnMin = 16, powRespawnMax = 28, shellRecoverySeconds = 9;
    float coinSpeed = 105, readySeconds = 2.4f;
    float spinySpeed = 66, buzzyBeetleSpeed = 56, flyingKoopaSpeed = 66;
@@ -39,8 +42,9 @@ struct Input {
 struct Player : Body {
    bool super = true, crouched = false, eliminated = false, jumpHeld = false;
    float invulnerable = 0;
+   float stunTimer = 0, forcedCrouchTimer = 0;
    int coins = 0, facing = 1;
-   float height() const { return super && !crouched ? 48.f : 28.f; }
+   float height() const { return crouched ? (super ? 28.f : 20.f) : (super ? 48.f : 28.f); }
 };
 enum class EnemyType { Spiny, BuzzyBeetle, FlyingKoopa };
 struct Enemy : Body {
@@ -106,6 +110,8 @@ public:
 private:
    std::mt19937 random;
    float enemyTimer = 0, booTimer = 0, itemTimer = 0, powTimer = 0;
+   float koopaTimer = 0;
+   bool koopaPending = true;
    bool nextPipeRight = false, nextBooDiagonal = false;
    void resetRound();
    float range(float low, float high);
@@ -113,12 +119,14 @@ private:
    void updatePlayer(int index, const Input& input, float dt);
    void collidePlayerCeiling(int index, float oldTop);
    void bouncePlayer(int index, float top);
+   void stunPlayer(int index, float seconds, bool crouch);
+   void collidePlayers(const std::array<Player, 2>& previous);
    void updateEnemies(float dt);
    void defeatEnemy(Enemy& enemy, int player);
    void updateDefeatedEnemies(float dt);
    void updateItems(float dt);
    void updateBoos(float dt);
-   void collisions(float dt);
+   void collisions(float dt, const std::array<Player, 2>& previous);
    void winRound(int player, bool coins);
    void emit(EventType type, float x, float y, int player = -1);
 };
