@@ -5,12 +5,12 @@ Input Input::instance;
 void Input::initDefault() {
    keyBindings = std::unordered_map<Key, SDL_Scancode>{
        {Key::NONE, SDL_SCANCODE_UNKNOWN},
-       {Key::RIGHT, SDL_SCANCODE_D},
-       {Key::LEFT, SDL_SCANCODE_A},
-       {Key::JUMP, SDL_SCANCODE_SPACE},
-       {Key::DUCK, SDL_SCANCODE_S},
-       {Key::SPRINT, SDL_SCANCODE_LSHIFT},
-       {Key::FIREBALL, SDL_SCANCODE_Q},
+       {Key::RIGHT, SDL_SCANCODE_H},
+       {Key::LEFT, SDL_SCANCODE_F},
+       {Key::JUMP, SDL_SCANCODE_S},
+       {Key::DUCK, SDL_SCANCODE_G},
+       {Key::SPRINT, SDL_SCANCODE_A},
+       {Key::FIREBALL, SDL_SCANCODE_D},
        {Key::MENU_UP, SDL_SCANCODE_UP},
        {Key::MENU_DOWN, SDL_SCANCODE_DOWN},
        {Key::MENU_LEFT, SDL_SCANCODE_LEFT},

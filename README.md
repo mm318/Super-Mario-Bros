@@ -46,8 +46,8 @@ zig build install-emsdk
 Build or run the browser version:
 
 ```sh
-zig build -Dtarget=wasm32-emscripten                       # Debug
-zig build -Dtarget=wasm32-emscripten -Doptimize=fast       # Release
+zig build -Dtarget=wasm32-emscripten                        # Debug
+zig build -Dtarget=wasm32-emscripten -Doptimize=fast        # Release
 zig build -Dtarget=wasm32-emscripten -Doptimize=fast run
 # Serve without opening a browser:
 zig build -Dtarget=wasm32-emscripten -Doptimize=fast run -- --no_browser
@@ -61,6 +61,20 @@ pthreads on localhost or HTTPS.
 
 `debug`, `safe`, `fast`, and `small` are the optimization modes. Build outputs
 and downloaded SDK files are ignored by Git.
+
+## Controls
+
+| Action | Default key |
+| --- | --- |
+| Left | F |
+| Right | H |
+| Jump | S |
+| Duck | G |
+| Sprint | A |
+| Fireball | D |
+
+Use the arrow keys and Enter in menus, and Escape to pause or go back.
+Gameplay keys can be changed in the options menu.
 
 ## How it Works
 
