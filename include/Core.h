@@ -1,17 +1,20 @@
 #pragma once
 
-#include "battle/BattleScene.h"
 #include <memory>
+
+#include "battle/BattleScene.h"
 
 class Core {
 public:
-   explicit Core(bool testMode = false) : testMode(testMode) {}
-   int init();
-   void run();
-   void mainLoop();
+  explicit Core(bool testMode = false) : testMode(testMode) {
+  }
+
+  int  init();
+  void run();
+  void mainLoop();
 
 private:
-   std::unique_ptr<BattleScene> scene;
-   bool running = true;
-   bool testMode;
+  std::unique_ptr<BattleScene> scene;
+  bool                         running = true;
+  bool                         testMode;
 };
