@@ -24,6 +24,18 @@ bool shellRecovered(const Body& shell, float& remaining, float dt, const Rules& 
    else remaining -= dt;
    return remaining <= 0;
 }
+float enemySpeed(const Enemy& enemy, const Rules& rules) {
+   const float normal = enemy.type == EnemyType::WalkingKoopa ? rules.koopaSpeed :
+                        enemy.type == EnemyType::FlyingKoopa ? rules.flyingKoopaSpeed :
+                        enemy.type == EnemyType::BuzzyBeetle ? rules.buzzyBeetleSpeed : rules.spinySpeed;
+   return normal * (enemy.angry ? rules.angrySpeedMultiplier : 1.f);
+}
+void reviveEnemy(Enemy& enemy, const Rules& rules) {
+   enemy.stunned = enemy.shell = false; enemy.angry = true;
+   if (enemy.isKoopa()) enemy.winged = false;
+   enemy.recovery = enemy.touchGrace = 0; enemy.lastPlayer = -1;
+   enemy.vx = enemy.direction * enemySpeed(enemy, rules);
+}
 void tuckKoopa(Enemy& koopa, const Rules& rules) {
    if (!koopa.shell) koopa.shellRecycles = 0;
    koopa.shell = true; koopa.vx = 0; koopa.vy = -160; koopa.grounded = false;
@@ -38,13 +50,13 @@ int kickDirection(const Body& body, const Player& player) {
 }
 void kickKoopa(Enemy& koopa, const Player& player, int index, const Rules& rules) {
    koopa.direction = kickDirection(koopa, player);
-   koopa.vx = koopa.direction * rules.shellSpeed;
+   koopa.vx = koopa.direction * rules.shellSpeed * (koopa.angry ? rules.angrySpeedMultiplier : 1.f);
    koopa.recovery = rules.shellRecoverySeconds;
    koopa.touchGrace = rules.shellKickGrace; koopa.lastPlayer = index;
 }
 
 template<class T> void emergeFromPipe(T& body, bool right) {
-   body.x = right ? 736 : 64; body.y = 144;
+   body.x = right ? 736 : 64; body.y = topPlatformY;
    body.direction = right ? -1 : 1;
    body.vy = 0; body.grounded = true;
 }
@@ -55,16 +67,20 @@ BattleGame::BattleGame(uint32_t seed, Rules settings) : rules(settings), random(
 float BattleGame::range(float low, float high) {
    return std::uniform_real_distribution<float>(low, high)(random);
 }
+ItemType BattleGame::randomMushroom() {
+   if (range(0, 1) < rules.mushroomChance) return ItemType::Mushroom;
+   return range(0, 1) < .5f ? ItemType::SizeSwapMushroom : ItemType::PositionSwapMushroom;
+}
 std::vector<EnemyType> BattleGame::roster(int number) {
    using E = EnemyType;
    switch (number) {
-      case 1: return {E::Spiny};
-      case 2: return {E::Spiny, E::BuzzyBeetle};
-      case 3: return {E::BuzzyBeetle};
-      case 4: return {E::Spiny, E::FlyingKoopa};
+      case 1: return {E::BuzzyBeetle};
+      case 2: return {E::BuzzyBeetle, E::Spiny};
+      case 3: return {E::Spiny};
+      case 4: return {E::BuzzyBeetle, E::FlyingKoopa};
       case 5: case 6: return {E::FlyingKoopa};
-      case 8: return {E::BuzzyBeetle, E::FlyingKoopa};
-      default: return {E::Spiny, E::BuzzyBeetle, E::FlyingKoopa};
+      case 8: return {E::Spiny, E::FlyingKoopa};
+      default: return {E::BuzzyBeetle, E::Spiny, E::FlyingKoopa};
    }
 }
 void BattleGame::startMatch() {
@@ -82,18 +98,18 @@ void BattleGame::resetRound() {
    for (auto& p : players) { p.y = floorY; p.grounded = true; }
    players[1].facing = -1;
    segments.clear(); enemies.clear(); defeatedEnemies.clear(); items.clear(); boos.clear(); events.clear();
-   // Three interleaved tiers. Players climb around the solid platform edges.
+   // Three interleaved tiers spread across the taller play area.
    for (int tile = 0; tile < 25; ++tile) {
-      if (tile < 10 || tile >= 15) segments.push_back({tile * 32.f, 144});
-      if (tile >= 5 && tile < 20) segments.push_back({tile * 32.f, 240});
-      if (tile < 10 || tile >= 15) segments.push_back({tile * 32.f, 344});
+      if (tile < 10 || tile >= 15) segments.push_back({tile * 32.f, topPlatformY});
+      if (tile >= 5 && tile < 20) segments.push_back({tile * 32.f, middlePlatformY});
+      if (tile < 10 || tile >= 15) segments.push_back({tile * 32.f, lowerPlatformY});
    }
    segments[static_cast<unsigned>(range(0, static_cast<float>(segments.size())))].hiddenItem = true;
    powCharges = 3; powTimer = 0;
    phase = Phase::Ready; winner = -1; coinVictory = false;
    readyTimer = rules.readySeconds; shake = 0;
    enemyTimer = rules.enemySpawnSeconds; booTimer = rules.booSpawnSeconds;
-   itemTimer = rules.itemSpawnSeconds; nextPipeRight = false;
+   itemTimer = rules.itemSpawnSeconds; coinTimer = rules.coinSpawnSeconds; nextPipeRight = false;
    nextBooDiagonal = false;
 }
 void BattleGame::emit(EventType type, float x, float y, int player) {
@@ -165,7 +181,7 @@ void BattleGame::updatePlayer(int index, const Input& in, float dt) {
       }
    };
    for (const auto& s : segments) blockSide(s.x, s.y, 32);
-   if (powCharges) blockSide(380, 344, 40);
+   if (powCharges) blockSide(380, lowerPlatformY, 40);
    p.x = nextX; wrap(p);
 
    const float oldFeet = p.y, oldTop = p.y - height;
@@ -182,28 +198,27 @@ void BattleGame::updatePlayer(int index, const Input& in, float dt) {
       float landing = floorY;
       for (const auto& s : segments)
          if (oldFeet <= s.y + .01f && p.y >= s.y && overlapsX(s.x, 32)) landing = std::min(landing, s.y);
-      if (powCharges && oldFeet <= 344 + .01f && p.y >= 344 && overlapsX(380, 40)) landing = std::min(landing, 344.f);
+      if (powCharges && oldFeet <= lowerPlatformY + .01f && p.y >= lowerPlatformY && overlapsX(380, 40)) landing = std::min(landing, lowerPlatformY);
       if (p.y >= landing) { p.y = landing; p.vy = 0; p.grounded = true; }
    }
-   if (p.y - p.height() < 72) { p.y = 72 + p.height(); p.vy = std::max(0.f, p.vy); }
 }
 void BattleGame::hitEnemy(Enemy& e, bool pow) {
    if (!e.alive || (!pow && !e.grounded)) return;
+   if (!pow && (e.stunned || e.shell)) {
+      reviveEnemy(e, rules);
+      e.vy = -150; e.grounded = false;
+      return;
+   }
    if (e.isKoopa()) {
       e.winged = e.stunned = false;
       tuckKoopa(e, rules);
       emit(EventType::Stun, e.x, e.y);
       return;
    }
-   if (e.stunned && !pow) {
-      e.stunned = e.shell = false; ++e.speedLevel;
-      e.vy = -150; e.grounded = false;
-   } else {
-      e.stunned = true; e.shell = e.type == EnemyType::BuzzyBeetle;
-      e.recovery = rules.stunSeconds; e.touchGrace = 0;
-      e.vx = 0; e.vy = -160; e.grounded = false;
-      emit(EventType::Stun, e.x, e.y);
-   }
+   e.stunned = true; e.shell = e.type == EnemyType::BuzzyBeetle;
+   e.recovery = rules.stunSeconds; e.touchGrace = 0;
+   e.vx = 0; e.vy = -160; e.grounded = false;
+   emit(EventType::Stun, e.x, e.y);
 }
 void BattleGame::collidePlayerCeiling(int index, float oldTop) {
    auto& p = players[index];
@@ -212,7 +227,7 @@ void BattleGame::collidePlayerCeiling(int index, float oldTop) {
          if (p.x + 11 > x + offset && p.x - 11 < x + offset + w) return true;
       return false;
    };
-   float ceiling = 72;
+   float ceiling = 0;
    int bumped = -1;
    bool hitPow = false;
    for (unsigned i = 0; i < segments.size(); ++i) {
@@ -224,10 +239,11 @@ void BattleGame::collidePlayerCeiling(int index, float oldTop) {
          }
       }
    }
-   if (powCharges && oldTop >= 376 - .01f && p.y - p.height() < 376 && overlapsX(380, 40) && 376 > ceiling) {
-      ceiling = 376; hitPow = true;
+   const float powBottom = lowerPlatformY + platformThickness;
+   if (powCharges && oldTop >= powBottom - .01f && p.y - p.height() < powBottom && overlapsX(380, 40) && powBottom > ceiling) {
+      ceiling = powBottom; hitPow = true;
    }
-   if (p.y - p.height() < ceiling) {
+   if ((hitPow || bumped >= 0) && p.y - p.height() < ceiling) {
       p.y = ceiling + p.height(); p.vy = 0;
       if (hitPow) activatePow(index);
       else if (bumped >= 0) bumpSegment(static_cast<unsigned>(bumped), index);
@@ -245,17 +261,25 @@ void BattleGame::bumpSegment(unsigned index, int player) {
    if (s.bump > .10f) return;
    s.bump = .22f;
    emit(EventType::Bump, s.x + 16, s.y, player);
+   const auto above = [&](const Body& body, float halfWidth) {
+      float dx = std::abs(body.x - (s.x + 16)); dx = std::min(dx, width - dx);
+      return body.grounded && std::abs(body.y - s.y) < 2 && dx < 16 + halfWidth;
+   };
    for (auto& e : enemies)
-      if (e.grounded && std::abs(e.y - s.y) < 2 && e.x + 13 > s.x && e.x - 13 < s.x + 32)
-         hitEnemy(e);
+      if (above(e, 13)) hitEnemy(e);
+   for (auto& item : items) {
+      if (item.alive && above(item, item.type == ItemType::Coin ? 12 : 14)) {
+         item.vy = -rules.itemBumpSpeed; item.grounded = false;
+      }
+   }
    const int other = 1 - player;
-   if (players[other].grounded && std::abs(players[other].y - s.y) < 2 && std::abs(players[other].x - s.x - 16) < 27) {
+   if (above(players[other], 11)) {
       stunPlayer(other, rules.platformStunSeconds);
       players[other].vy = -260; players[other].grounded = false;
    }
    if (s.hiddenItem) {
       s.hiddenItem = false;
-      Item item; item.type = range(0, 1) < .5f ? ItemType::Mushroom : ItemType::SwapMushroom;
+      Item item; item.type = randomMushroom();
       item.x = s.x + 16; item.y = s.y - 3; item.vy = -180;
       item.direction = players[player].facing; items.push_back(item);
       emit(EventType::Mushroom, item.x, item.y);
@@ -279,16 +303,11 @@ void BattleGame::updateEnemies(float dt) {
          e.vx = 0;
          if (!e.isKoopa()) {
             e.recovery -= dt;
-            if (e.recovery <= 0) { e.stunned = e.shell = false; ++e.speedLevel; }
+            if (e.recovery <= 0) reviveEnemy(e, rules);
          }
       }
       if (!e.stunned && !e.shell) {
-         const float speed = e.type == EnemyType::WalkingKoopa ? rules.koopaSpeed :
-                             e.type == EnemyType::FlyingKoopa ? rules.flyingKoopaSpeed :
-                             e.type == EnemyType::BuzzyBeetle ? rules.buzzyBeetleSpeed : rules.spinySpeed;
-         const int level = std::min(e.speedLevel, 6);
-         e.vx = e.direction * (e.type == EnemyType::WalkingKoopa ? speed + rules.koopaRecoverySpeedGain * level :
-                              speed * (1 + rules.recoverySpeedGain * level));
+         e.vx = e.direction * enemySpeed(e, rules);
          if (e.type == EnemyType::FlyingKoopa && e.winged && e.grounded) {
             e.hop -= dt;
             if (e.hop <= 0) {
@@ -299,13 +318,12 @@ void BattleGame::updateEnemies(float dt) {
       }
       moveBody(e, e.type == EnemyType::WalkingKoopa ? 12 : 11, dt);
       if (e.isKoopa() && (e.stunned || e.shell) && shellRecovered(e, e.recovery, dt, rules)) {
-         e.stunned = e.shell = false; ++e.speedLevel;
+         reviveEnemy(e, rules);
       }
       if (e.grounded && e.y == floorY && (e.x < 58 || e.x > 742)) {
          if (e.isKoopa() && e.shell && std::abs(e.vx) > .01f) {
             if (e.shellRecycles >= 1) {
                e.alive = false;
-               if (e.type == EnemyType::FlyingKoopa) spawnItem(ItemType::Coin);
                continue;
             }
             ++e.shellRecycles;
@@ -342,7 +360,6 @@ void BattleGame::defeatEnemy(Enemy& enemy, int player) {
    falling.vy = -rules.defeatedPopSpeed;
    falling.grounded = false;
    defeatedEnemies.push_back(falling);
-   spawnItem(ItemType::Coin);
    emit(EventType::Kick, enemy.x, enemy.y, player);
 }
 void BattleGame::updateDefeatedEnemies(float dt) {
@@ -361,11 +378,11 @@ void BattleGame::updateBoos(float dt) {
       boo.age += dt; boo.x += boo.vx * dt;
       if (boo.diagonal) {
          wrap(boo); boo.y += boo.vy * dt;
-         if (boo.y < 120) { boo.y = 120; boo.vy = std::abs(boo.vy); }
+         if (boo.y < hudHeight + 48) { boo.y = hudHeight + 48; boo.vy = std::abs(boo.vy); }
          if (boo.y > floorY - 12) { boo.y = floorY - 12; boo.vy = -std::abs(boo.vy); }
       } else {
          const float entrance = std::min(boo.age / 2, 1.f);
-         boo.y = 144 + (boo.baseY - 144 + std::sin(boo.age * rules.booWaveFrequency) * rules.booWaveAmplitude) * entrance;
+         boo.y = topPlatformY + (boo.baseY - topPlatformY + std::sin(boo.age * rules.booWaveFrequency) * rules.booWaveAmplitude) * entrance;
       }
    }
    boos.erase(std::remove_if(boos.begin(), boos.end(), [this](const Boo& b) {
@@ -385,6 +402,22 @@ void BattleGame::hurtPlayer(int index) {
       winRound(1 - index, false);
    }
 }
+void BattleGame::fitPlayer(Player& p) {
+   p.crouched = p.super && (p.crouched || p.stunTimer > 0);
+   const auto separate = [&](float x, float y, float w) {
+      for (float offset : {-width, 0.f, width}) {
+         if (p.x + 11 > x + offset && p.x - 11 < x + offset + w &&
+             p.y > y && p.y - p.height() < y + platformThickness) {
+            // Growing or swapping into a low ceiling must not embed a player
+            // in a solid platform or trigger a head-bump attack.
+            p.y = y + platformThickness + p.height();
+            p.vy = std::max(0.f, p.vy); p.grounded = false;
+         }
+      }
+   };
+   for (const auto& s : segments) separate(s.x, s.y, 32);
+   if (powCharges) separate(380, lowerPlatformY, 40);
+}
 void BattleGame::collectItem(Item& item, int index) {
    if (!item.alive || phase != Phase::Playing) return;
    auto& p = players[index]; item.alive = false;
@@ -392,18 +425,18 @@ void BattleGame::collectItem(Item& item, int index) {
       ++p.coins; emit(EventType::Coin, p.x, p.y - 32, index);
       if (p.coins >= Rules::coinsToWin) winRound(index, true);
    } else if (item.type == ItemType::Mushroom) {
-      p.super = true; p.crouched = p.stunTimer > 0;
+      p.super = true; fitPlayer(p);
       emit(EventType::Mushroom, p.x, p.y, index);
    } else {
       auto& a = players[0]; auto& b = players[1];
-      if (a.super == b.super) {
+      if (item.type == ItemType::PositionSwapMushroom) {
          // Swap complete spatial state so grounded flags/velocity stay coherent.
          std::swap(static_cast<Body&>(a), static_cast<Body&>(b));
       } else {
          std::swap(a.super, b.super);
-         a.crouched = a.super && a.stunTimer > 0; b.crouched = b.super && b.stunTimer > 0;
       }
-      emit(EventType::Swap, p.x, p.y, index);
+      fitPlayer(a); fitPlayer(b);
+      emit(item.type == ItemType::PositionSwapMushroom ? EventType::PositionSwap : EventType::SizeSwap, p.x, p.y, index);
    }
 }
 void BattleGame::winRound(int index, bool coins) {
@@ -412,7 +445,7 @@ void BattleGame::winRound(int index, bool coins) {
    phase = Phase::RoundOver;
    emit(EventType::RoundWin, players[index].x, players[index].y, index);
    if (wins[index] >= Rules::roundsToWin) {
-      phase = Phase::MatchOver; stars[index] = (stars[index] + 1) % 6;
+      phase = Phase::MatchOver;
       emit(EventType::MatchWin, players[index].x, players[index].y, index);
    }
 }
@@ -437,7 +470,7 @@ void BattleGame::collisions(float dt, const std::array<Player, 2>& previous) {
          const float top = e.y - (e.isKoopa() && !e.shell ? 32 : 27);
          const bool stomp = p.vy > 0 && p.y - p.vy * dt <= top + 10;
          if (e.type == EnemyType::BuzzyBeetle && stomp) {
-            if (e.stunned) { e.stunned = e.shell = false; e.recovery = 0; ++e.speedLevel; }
+            if (e.stunned) reviveEnemy(e, rules);
             e.touchGrace = rules.shellKickGrace; e.lastPlayer = i;
             bouncePlayer(i, top);
             emit(EventType::Stun, e.x, e.y, i);
@@ -497,7 +530,7 @@ void BattleGame::collidePlayers(const std::array<Player, 2>& previous) {
             return false;
          };
          for (const auto& s : segments) if (blocked(s.x, s.y, 32)) return false;
-         return !powCharges || !blocked(380, 344, 40);
+         return !powCharges || !blocked(380, lowerPlatformY, 40);
       };
       const bool moveA = canShift(a, -push), moveB = canShift(b, push);
       if (moveA && moveB) { a.x -= push; b.x += push; }
@@ -528,13 +561,13 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
    enemies.erase(std::remove_if(enemies.begin(), enemies.end(), [](const Enemy& e) { return !e.alive; }), enemies.end());
    items.erase(std::remove_if(items.begin(), items.end(), [](const Item& i) { return !i.alive; }), items.end());
    if (phase != Phase::Playing) return;
-   enemyTimer -= dt; booTimer -= dt; itemTimer -= dt;
+   enemyTimer -= dt; booTimer -= dt; itemTimer -= dt; coinTimer -= dt;
    if (enemyTimer <= 0) {
       if (static_cast<int>(enemies.size()) < rules.enemyLimit) spawnEnemy();
       enemyTimer = rules.enemySpawnSeconds;
    }
    if (booTimer <= 0) {
-      Boo boo; boo.x = 64; boo.baseY = range(180, 365); boo.y = 144;
+      Boo boo; boo.x = 64; boo.baseY = range(topPlatformY + 36, 365); boo.y = topPlatformY;
       boo.diagonal = nextBooDiagonal; nextBooDiagonal = !nextBooDiagonal;
       boo.vx = boo.diagonal ? rules.booDiagonalSpeed : rules.booWaveSpeed;
       boo.vy = rules.booVerticalSpeed; boos.push_back(boo);
@@ -542,8 +575,13 @@ void BattleGame::step(float dt, const std::array<Input, 2>& inputs) {
    }
    if (itemTimer <= 0) {
       if (std::count_if(items.begin(), items.end(), [](const Item& i) { return i.type != ItemType::Coin; }) < 3)
-         spawnItem(range(0, 1) < rules.mushroomChance ? ItemType::Mushroom : ItemType::SwapMushroom);
+         spawnItem(randomMushroom());
       itemTimer = rules.itemSpawnSeconds;
+   }
+   if (coinTimer <= 0) {
+      if (std::count_if(items.begin(), items.end(), [](const Item& i) { return i.type == ItemType::Coin; }) < rules.coinLimit)
+         spawnItem(ItemType::Coin);
+      coinTimer = rules.coinSpawnSeconds;
    }
    if (!powCharges) {
       powTimer -= dt;

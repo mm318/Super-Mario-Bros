@@ -1,26 +1,25 @@
 # Super Mario Bros. — Battle Game
 
-A simultaneous local two-player arena platformer, rebuilt from this repository's
-C++/SDL game using its Mario/Luigi, Spiny, Koopa, tile, mushroom and coin sprites,
-Press Start 2P font, music and sound effects. Platforms use the underground
-thick-brick tile. Boo hazards use castle-palette Lakitu sprites. Pipes are built
-from the four overworld pipe tiles; mushrooms use the overworld mushroom tile.
-Flying Koopas use their winged, walking and shell sprites; Buzzy Beetles use
-the underground-palette walking and shell sprites. Stun stars use the existing
-overworld star tile. POW, the arena
-background, HUD, menus, status indicators and particles are drawn in code.
+A simultaneous local two-player arena platformer using this repository's Mario,
+Luigi, enemy, tile, mushroom, coin and star sprites, Press Start 2P font, music
+and sound effects. Platforms use the underground brick with an illuminated top;
+Boo hazards use castle-palette Lakitu sprites. Pipes use four overworld tiles.
+POW, the arena background, HUD, menus and particles are drawn in code.
 
-Defeat enemies to create **shared coins**, race to collect five, or eliminate the
-other player. Win five rounds to earn a match star. There is one fixed, wrapping
-arena, continuous enemy replenishment, and no campaign or bonus stages. Every
-round starts empty: after the ready countdown, enemies enter through
-upper pipes every 2.8 seconds, with a 7% chance of a walking green Koopa, and
-Lakitu/Boo hazards begin entering from the left upper pipe after 14 seconds.
+Race to collect **five shared coins** or eliminate the opponent to win a round.
+The first player to win five rounds wins the match, which lasts five to nine
+rounds. Stars in the HUD represent round wins in the current match and reset
+when a new match starts. There are no saved victory totals or campaign stages.
+
+Every round starts empty. After the ready countdown, enemies enter through
+upper pipes every 2.8 seconds. Shared coins enter independently every 15
+seconds, up to five uncollected coins in the arena. Defeating an enemy never
+releases or awards a coin. Lakitu/Boo hazards begin entering after 14 seconds.
 
 ## Play
 
-Press **Enter** on the title screen. Two people play simultaneously on one keyboard,
-or connect two SDL-compatible gamepads (first connected is Mario).
+Choose **Start Battle** on the title screen. Two people play simultaneously on
+one keyboard, or connect two SDL-compatible gamepads (first connected is Mario).
 
 | Action | Mario | Luigi | Gamepad |
 | --- | --- | --- | --- |
@@ -29,59 +28,65 @@ or connect two SDL-compatible gamepads (first connected is Mario).
 | Dash (hold) | A | , (comma) | X / Y |
 | Crouch when Super | G | Down | D-pad / stick down |
 
-**Enter / Space** starts the game, continues after a round, and starts another
-match after a victory. **Escape** pauses; **Tab** opens the rules and pauses
-play; **M** mutes; **F11** toggles fullscreen. Gamepad Start pauses/continues and
-Back opens the rules. In pause, **R** restarts the match and **Q** returns to the
-title. Losing window focus pauses automatically. Stars survive restart/title.
+**Escape** is the only way to open the pause menu. Choose Resume Battle,
+Restart Match, How to Battle, or Title Screen using Up/Down and Enter/Space,
+or hover and click with the mouse. Gamepad D-pad and A also select options in
+an already open menu. How to Battle returns to its parent menu using Back,
+Enter, or Escape. The title screen also has a How to Battle option.
 
-Jump into the underside of a platform beneath a grounded enemy to bump its
-segment; climb around its edge and touch the stunned enemy to kick it. A coin
-then enters from an upper pipe. **Kicks don't award coins automatically.**
-Either player can collect any coin. Platforms are 32 logical pixels thick and solid on every side. A head
-strike bumps a segment and stops the jump. Use the gaps and edges to climb.
+Enter/Space continues after a round or starts a new match after a victory.
+**M** mutes and **F11** toggles fullscreen. Losing focus suspends play without
+opening the pause menu; play resumes when focus returns.
 
-- Spinies are overturned by one platform bump, then defeated by contact.
-- Permanently kicked-out enemies keep their sprite and fall through the arena
-  and floor, drifting slightly in the kick direction. Their falling bodies have
-  no collisions or rewards; the shared coin appears immediately as before.
-- Underground Buzzy Beetles occupy the original Crab roster slots. Stomping an
-  active beetle bounces the player without hurting either. Bump its platform
-  from below to expose its shell: a side kick defeats it and generates a shared
-  coin, while stomping its shell restores the active beetle.
-- Stomp a flying Koopa to remove its wings; stomp again to retract it into a shell.
-  Platform bumps and POW also retract Koopas. Stomping any Koopa shell launches
-  it, as does side contact with a stopped shell. A short grace period protects
-  only the player who kicked it; the rival can be hit immediately.
-- Recovered enemies move faster. Bumping a stunned enemy turns it upright early
-  and increases its speed. Spinies also change color.
-- Stomping a rival stuns them for 0.5 seconds. Hitting
-  the block beneath a rival stuns them for 1 second and bumps them upward.
-  Movement, dash and jump input are locked while stunned; gravity still applies.
-  These effects work on both player sizes, during damage invulnerability, and in
-  test mode. Stunned Super players use the crouch sprite; Small players use their
-  game-over sprite without shrinking it into a crouch. Four stars orbit their
-  head until the stun ends. Manual Super crouching uses the same crouch sprite.
-- Both players start every round Super. Damage makes them Small, with brief
-  invulnerability; another hit eliminates them and immediately awards the round.
-- Walking green Koopas follow the same shell rules but never award
-  coins. Moving shells toss other regular enemies without killing them. All
-  Koopa shells recover only after remaining completely stopped on a platform or
-  floor for nine seconds; movement restarts the timer.
-- Moving Koopa shells re-emerge after their first lower-pipe entry, then disappear
-  into a lower pipe on their next entry. Re-kicking or POW does not reset this
-  limit. A regular flying Koopa generates a shared coin when it disappears;
-  a walking green Koopa generates no coin. New walking Koopas can spawn afterward.
-- The central POW overturns Spinies and beetles, retracts all Koopas (including
-  walking and airborne ones), stops moving shells, and clears Boos.
-  It also stuns the opposing player for one second, regardless of invincibility.
-  It has three charges and returns after a random delay once exhausted.
-- Mushrooms restore Super size. Swap mushrooms exchange player positions when
-  sizes match, or exchange their sizes when they differ. Both use the unmodified
-  overworld mushroom sprite, without a ? overlay.
-- Coins and enemies recycle through the lower pipes. Unclaimed coins don't expire.
-- First to five round wins ends the match, after five to nine rounds. A player's
-  sixth star resets their displayed stars to zero.
+The HUD is 28 logical pixels tall. Mario's name, five coin slots and five
+round-win star slots align to the left; Luigi's align to the right, with the
+round centered. Empty slots show silhouettes of the original coin/star sprites;
+collected coins and round victories fill those slots, without numeric counts.
+Platforms span more of the vertical space. The HUD does not stop jumps.
+
+Jump into a platform beneath a grounded enemy to stun it. Jump onto platforms
+and touch stunned enemies to kick them away. Platforms are 32 logical pixels
+thick and solid on every side. Kicking enemies helps control the arena; coins
+arrive separately and either player can collect them.
+
+- Spinies overturn after one platform bump, then can be defeated by contact.
+- Buzzy Beetles use their underground sprites. Stomping an active beetle is
+  harmless; bump its platform to expose its upright shell. Side contact kicks
+  it out, while stomping its shell restores the active beetle.
+- Stomp a flying Koopa to remove its wings, then stomp again to retract it.
+  The first platform bump and POW also retract Koopas. Stomping a shell launches it; side contact
+  launches a stopped shell. A brief grace period protects only the kicker.
+- Moving shells toss other enemies without killing them. Koopa shells recover
+  only after nine uninterrupted seconds at rest. They re-emerge after one
+  lower-pipe entry, then disappear into the pipe on their next entry. Re-kicking
+  and POW do not reset that limit. Neither type of Koopa releases a coin.
+- Bumping a stunned enemy or shell from below revives it angry. This includes
+  Spiny, Buzzy Beetle, and both Koopa types; flying Koopas never regain their
+  wings. Recovery timers and beetle-shell stomps also revive angry enemies.
+  There are only normal and angry states: angry movement and kicked Koopa
+  shells are exactly 50% faster, with no stacking. All angry enemies and shells use a red tint.
+  Stunned foes and stopped Koopa shells have orbiting stars.
+- Bump a platform beneath a grounded coin or any mushroom to bounce it upward.
+  Its type, travel direction and collectible state remain unchanged.
+- Stomping a rival stuns them for 0.5 seconds. Bumping the block beneath them
+  stuns them for one second and pops them upward. Large stunned players crouch;
+  Small stunned players use the game-over pose. Orbiting stars mark the stun.
+  Stuns lock movement, dash and jump, while gravity continues normally.
+- Both players start Super. Damage shrinks them; another hit while Small
+  eliminates them and awards the opponent the round, regardless of coin counts.
+- The translucent POW overturns Spinies and beetles, retracts Koopas, stops shells, clears Boos,
+  and stuns the opponent for one second regardless of invincibility. It has
+  three charges and returns after a random delay once exhausted.
+- Mushroom appearance determines its effect, regardless of current sizes:
+
+| Mushroom palette | Effect |
+| --- | --- |
+| General | Grow from Small to Super; no effect when already Super |
+| Overworld | Exchange Mario's and Luigi's sizes |
+| Underground | Exchange their positions and movement states, keeping their sizes |
+
+Mushrooms emerge from pipes or hidden platform segments. Coins and enemies
+recycle through the lower pipes; uncollected coins never expire.
 
 | Round | Regular enemies |
 | --- | --- |
@@ -95,14 +100,9 @@ strike bumps a segment and stops the jump. Use the gaps and edges to climb.
 | 8 | Buzzy Beetle, Flying Koopa |
 | 9 | Spiny, Buzzy Beetle, Flying Koopa |
 
-In every round, each enemy spawn has a 7% chance of being a walking green Koopa;
-the remaining 93% uses that round's roster above. Walkers share the five-enemy
-arena limit and can spawn repeatedly, including after earlier ones disappear.
+Each enemy spawn in every round has a 7% chance of being a walking green Koopa;
+the other 93% uses the roster above. Walkers recur and share the five-enemy cap.
 Lakitu/Boo hazards recur separately in every round.
-
-Stars are stored in SDL's application preferences directory under
-`SuperMarioBros/BattleGame/stars.txt` on desktop and in this browser origin's
-`localStorage` on web. A new match resets rounds and coins while keeping stars.
 
 ## Build and run
 
@@ -158,19 +158,21 @@ zig build test
 ```
 
 The SDL-independent simulation is in `include/battle/BattleGame.h` and
-`src/battle/BattleGame.cpp`. `BattleScene` handles input, rendering, audio, menus,
-and star persistence. `Core` owns the scene and application loop; the former
+`src/battle/BattleGame.cpp`. `BattleScene` handles input, rendering, audio and menus.
+`Core` owns the scene and application loop; the former
 campaign scenes, ECS systems, commands and map code have been removed. Builds
 package the fonts, sounds and sprites used by Battle Game. `res/` contains only
 the active font, three sprite sheets, window icon, twelve sound effects, battle
 music, and Windows icon/resource script. Campaign level data, screenshots,
 menu artwork, tile mappings and unused audio have been removed.
 
-Tests cover five-coin wins, five-to-nine-round matches, star rollover, all nine
+Tests cover five-coin wins, five-to-nine-round matches and fresh-match resets, all nine
 rosters, 7% walking-Koopa spawn frequency in every round, recurring walkers and the
-shared enemy cap, empty round starts and delayed pipe entrances, enemy state transitions, solid platform head/side collisions and edge
-climbing in both player sizes, jump/bump/kick behavior, contested
-coins, damage, both ? Mushroom cases, POW exhaustion/regeneration, spawning,
+shared enemy cap, empty round starts and delayed pipe entrances, enemy state
+transitions, solid platform head/side collisions, jumping onto platforms in both
+player sizes, unrestricted jumps above the HUD, item bounces, non-stacking 50% enemy anger,
+jump/bump/kick behavior, 15-second coin cadence, independent contested coin spawns, no coins from defeated
+enemies, damage, all three mushroom effects, POW exhaustion/regeneration, spawning,
 Buzzy Beetle immunity/revival/finishing kicks, Koopa wing removal, POW effects,
 side/stomp shell launches, per-player kick grace, one-recycle shell retirement,
 recovery after continuous rest, player stomp/bump/POW stun durations, Super stun
