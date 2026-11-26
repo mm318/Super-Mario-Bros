@@ -1322,34 +1322,85 @@ void platformPlayerStuns() {
       }
     }
   }
+}
 
-  // A later stomp cannot shorten an existing platform stun or its crouch pose.
-  auto g         = quiet();
-  g.players[1].x = 352;
-  g.players[1].y = middlePlatformY;
-  g.bumpSegment(tileAt(g, 352, middlePlatformY), 0);
-  g.players[1].y        = middlePlatformY;
-  g.players[1].vy       = 0;
-  g.players[1].grounded = true;
-  g.players[0].x        = 352;
-  g.players[0].y        = middlePlatformY - g.players[1].height() - 8;
-  g.players[0].vy       = 220;
-  g.players[0].grounded = false;
-  bool stomped          = false;
-  for (int frame = 0; frame < 30 && !stomped; ++frame) {
-    g.step(dt, {});
-    for (const auto & e : g.events) {
-      stomped |= e.type == EventType::Stun && e.player == 1;
+// Stuns player 1, standing on the middle platform, by stomp, bump or POW.
+void stunPlayerOne(BattleGame & g, int how) {
+  auto & victim  = g.players[1];
+  auto & stomper = g.players[0];
+  if (how == 0) {
+    stomper.x        = victim.x;
+    stomper.y        = victim.y - victim.height() - 8;
+    stomper.vx       = 0;
+    stomper.vy       = 220;
+    stomper.grounded = false;
+    for (int frame = 0; frame < 30 && stomper.vy > 0; ++frame) {
+      g.step(dt, {});
+    }
+
+    CHECK(stomper.vy < 0); // The stomper bounces whether or not the stun takes.
+    stomper.x  = 100;
+    stomper.y  = floorY;
+    stomper.vx = stomper.vy = 0;
+    stomper.grounded        = true;
+  } else if (how == 1) {
+    g.bumpSegment(tileAt(g, 352, middlePlatformY), 0);
+  } else {
+    g.activatePow(0);
+  }
+}
+
+bool stunEvent(const BattleGame & g) {
+  for (const auto & e : g.events) {
+    if (e.type == EventType::Stun && e.player == 1) {
+      return true;
     }
   }
 
-  CHECK(stomped && g.players[1].stunTimer > .8f && g.players[1].crouched);
+  return false;
+}
 
-  g.players[0].x  = 100;
-  g.players[0].y  = floorY;
-  g.players[0].vx = g.players[0].vy = 0;
-  tick(g, .6f);
-  CHECK(g.players[1].stunTimer > 0 && g.players[1].crouched);
+// A stun runs its course: stomps, bumps from below and POWs that land during
+// it neither refresh, extend nor shorten the countdown, then work once it ends.
+void stunsDoNotRefresh() {
+  const Rules rules;
+  const float lasts[] = {rules.stompStunSeconds, rules.platformStunSeconds, rules.powStunSeconds};
+  for (int first = 0; first < 3; ++first) {
+    for (int second = 0; second < 3; ++second) {
+      auto   g      = quiet();
+      auto & victim = g.players[1];
+      victim.x      = 352;
+      victim.y      = middlePlatformY;
+
+      stunPlayerOne(g, first);
+      CHECK(victim.stunTimer > lasts[first] - .05f && stunEvent(g));
+      for (int frame = 0; frame < 240 && victim.stunTimer > .15f; ++frame) {
+        g.step(dt, {});
+      }
+
+      const float left    = victim.stunTimer;
+      const int   charges = g.powCharges;
+      CHECK(left > .1f && left <= .15f && victim.grounded && victim.crouched);
+
+      stunPlayerOne(g, second);
+      CHECK(victim.stunTimer <= left && victim.stunTimer > left - 5 * dt && victim.crouched);
+      CHECK(!stunEvent(g));
+      if (second == 1) {
+        CHECK(victim.vy < 0 && !victim.grounded); // The bump still knocks them upward.
+      }
+      if (second == 2) {
+        CHECK(g.powCharges == charges - 1);
+      }
+
+      tick(g, left + .05f);
+      CHECK(victim.stunTimer == 0);
+
+      tick(g, .5f); // Land again after any bump.
+      CHECK(victim.grounded && victim.x == 352 && victim.y == middlePlatformY);
+      stunPlayerOne(g, second);
+      CHECK(victim.stunTimer > lasts[second] - .05f && stunEvent(g));
+    }
+  }
 }
 
 void powStunsPlayers() {
@@ -1389,6 +1440,33 @@ void powStunsPlayers() {
       }
     }
   }
+}
+
+// Paused spawning holds back every arrival, then lets them through once resumed.
+void spawningPauses() {
+  Rules rules;
+  rules.enemySpawnSeconds = rules.booSpawnSeconds = rules.itemSpawnSeconds = rules.coinSpawnSeconds = .2f;
+  rules.spawning                                                                                    = false;
+
+  BattleGame g(5, rules);
+  g.phase         = Phase::Playing;
+  g.powCharges    = 0;
+  unsigned hidden = 0;
+  while (!g.segments[hidden].hiddenItem) {
+    ++hidden;
+  }
+
+  g.bumpSegment(hidden, 0);
+  tick(g, 3);
+  CHECK(g.segments[hidden].hiddenItem);
+  CHECK(g.enemies.empty() && g.items.empty() && g.boos.empty() && g.powCharges == 0);
+
+  g.rules.spawning = true;
+  tick(g, 1);
+  CHECK(!g.enemies.empty() && !g.items.empty() && !g.boos.empty() && g.powCharges == 3);
+
+  g.bumpSegment(hidden, 0);
+  CHECK(!g.segments[hidden].hiddenItem && g.events.back().type == EventType::Mushroom);
 }
 
 void emptyRoundsAndPipeSpawns() {
@@ -1519,7 +1597,9 @@ int main() {
   invinciblePlayersTestMode();
   playerStompsAndStuns();
   platformPlayerStuns();
+  stunsDoNotRefresh();
   powStunsPlayers();
+  spawningPauses();
   emptyRoundsAndPipeSpawns();
   tiesAndStress();
 

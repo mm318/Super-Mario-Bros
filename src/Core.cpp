@@ -16,7 +16,7 @@ int Core::init() {
     return -1;
   }
 
-  scene = std::make_unique<BattleScene>(testMode);
+  scene = std::make_unique<BattleScene>(testMode, demo);
   return 0;
 }
 

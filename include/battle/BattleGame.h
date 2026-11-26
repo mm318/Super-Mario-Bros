@@ -10,6 +10,7 @@
 namespace battle {
 struct Rules {
   bool invinciblePlayers = false; // Test mode prevents elimination after shrinking.
+  bool spawning          = true;  // False pauses every arrival: pipes, boos, hidden blocks, POW refills.
 
   float gravity = 1600, jumpSpeed = 520, heldJumpGravity = .60f;
   float acceleration = 1500, friction = 1800, walkSpeed = 180, dashSpeed = 280;

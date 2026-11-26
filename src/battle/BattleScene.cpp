@@ -45,9 +45,18 @@ SDL_Rect blockSource(int id) {
 const char * name(int i) {
   return i == 0 ? "MARIO" : "LUIGI";
 }
+
+constexpr int titleFirstY = 322, titleSpacing = 38, titleOptions = 3;
+
+constexpr std::array<const char *, 3> cpuLevels{"EASY", "NORMAL", "HARD"};
+
+battle::BotConfig cpuConfig(int level) {
+  return level == 0 ? battle::BotConfig::easy() : level == 1 ? battle::BotConfig() : battle::BotConfig::hard();
+}
 } // namespace
 
-BattleScene::BattleScene(bool testMode) : game(static_cast<uint32_t>(std::time(nullptr))) {
+BattleScene::BattleScene(bool testMode, bool demoMode)
+    : game(static_cast<uint32_t>(std::time(nullptr))), demo(demoMode) {
   game.rules.invinciblePlayers = testMode;
 
   auto & t = TextureManager::Get();
@@ -72,6 +81,10 @@ BattleScene::BattleScene(bool testMode) : game(static_cast<uint32_t>(std::time(n
   Mix_VolumeMusic(MIX_MAX_VOLUME / 3);
 
   previous = static_cast<double>(SDL_GetPerformanceCounter()) / SDL_GetPerformanceFrequency();
+
+  if (demo) {
+    startBattle();
+  }
 }
 
 BattleScene::~BattleScene() {
@@ -194,6 +207,14 @@ void BattleScene::setPaused(bool value) {
 void BattleScene::startBattle() {
   title = help = false;
   game.startMatch();
+
+  // The computer plays Luigi against one person, or both sides in a demo.
+  for (int i = 0; i < 2; ++i) {
+    bots[i].reset();
+    if (demo || (versusCpu && i == 1)) {
+      bots[i] = std::make_unique<battle::BattleBot>(i, cpuConfig(cpuLevel));
+    }
+  }
   particles.clear();
   accumulator = 0;
   resultDelay = noticeTimer = 0;
@@ -209,7 +230,9 @@ void BattleScene::selectMenuOption() {
   }
 
   if (title) {
-    if (titleChoice == 0) {
+    if (titleChoice < 2) {
+      versusCpu = titleChoice == 0;
+      demo      = false;
       startBattle();
     } else {
       help = true;
@@ -272,7 +295,8 @@ void BattleScene::handleEvent(const SDL_Event & e) {
     // SDL already scales mouse events to the renderer's logical coordinates.
     const int x     = e.type == SDL_MOUSEMOTION ? e.motion.x : e.button.x;
     const int y     = e.type == SDL_MOUSEMOTION ? e.motion.y : e.button.y;
-    const int first = help ? helpBackY : title ? 334 : 174, spacing = title ? 42 : 52, count = help ? 1 : title ? 2 : 4;
+    const int first = help ? helpBackY : title ? titleFirstY : 174, spacing = title ? titleSpacing : 52;
+    const int count = help ? 1 : title ? titleOptions : 4;
     for (int option = 0; option < count; ++option) {
       const int row = first + option * spacing;
       if (x >= 220 && x < 580 && y >= row - menuPaddingTop && y < row + 28) {
@@ -305,6 +329,12 @@ void BattleScene::handleEvent(const SDL_Event & e) {
     }
     if (menu && e.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_DOWN) {
       key = SDLK_DOWN;
+    }
+    if (menu && e.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_LEFT) {
+      key = SDLK_LEFT;
+    }
+    if (menu && e.cbutton.button == SDL_CONTROLLER_BUTTON_DPAD_RIGHT) {
+      key = SDLK_RIGHT;
     }
     if (menu && e.cbutton.button == SDL_CONTROLLER_BUTTON_A) {
       key = SDLK_RETURN;
@@ -341,8 +371,14 @@ void BattleScene::handleEvent(const SDL_Event & e) {
 
   if ((title || paused) && !help && (key == SDLK_UP || key == SDLK_DOWN)) {
     auto &    choice = title ? titleChoice : pauseChoice;
-    const int count  = title ? 2 : 4;
+    const int count  = title ? titleOptions : 4;
     choice           = (choice + (key == SDLK_UP ? count - 1 : 1)) % count;
+    return;
+  }
+
+  if (title && !help && titleChoice == 0 && (key == SDLK_LEFT || key == SDLK_RIGHT)) {
+    const int count = static_cast<int>(cpuLevels.size());
+    cpuLevel        = (cpuLevel + (key == SDLK_LEFT ? count - 1 : 1)) % count;
     return;
   }
 
@@ -370,6 +406,15 @@ std::array<battle::Input, 2> BattleScene::readInput() const {
   for (int i = 0; i < 2; ++i) {
     const auto & keys = keyboardControls[i];
     in[i] = {bool(k[keys.left]), bool(k[keys.right]), bool(k[keys.jump]), bool(k[keys.dash]), bool(k[keys.crouch])};
+  }
+
+  // Against the computer, Luigi's keys are free, so either set moves Mario.
+  if (bots[1] && !bots[0]) {
+    in[0].left |= in[1].left;
+    in[0].right |= in[1].right;
+    in[0].jump |= in[1].jump;
+    in[0].dash |= in[1].dash;
+    in[0].down |= in[1].down;
   }
 
   for (int i = 0; i < 2; ++i) {
@@ -472,9 +517,22 @@ void BattleScene::update() {
       resultDelay += dt;
     }
 
+    // A demo has nobody to press Enter between rounds.
+    if (demo && resultDelay > 3) {
+      game.nextRound();
+      particles.clear();
+      resultDelay = 0;
+      SoundManager::Get().playMusic();
+    }
+
     accumulator += dt;
-    const auto input = readInput();
+    auto input = readInput();
     while (accumulator >= 1.0 / 120) {
+      for (int i = 0; i < 2; ++i) {
+        if (bots[i]) {
+          input[i] = bots[i]->update(game, 1.f / 120);
+        }
+      }
       game.step(1.f / 120, input);
       processEvents();
       accumulator -= 1.0 / 120;
@@ -827,14 +885,26 @@ void BattleScene::render() {
     for (int i = 0; i < 2; ++i) {
       const auto & keys = keyboardControls[i];
       const int    x    = 118 + i * 316;
+      if (i == 1 && titleChoice == 0) {
+        text("COMPUTER PLAYER", x, 256, 8, white);
+        text(std::string("LEVEL  < ") + cpuLevels[cpuLevel] + " >", x, 275, 8, dim);
+        continue;
+      }
+
       text(
         keyName(keys.left) + " " + keyName(keys.right) + " MOVE / " + keyName(keys.jump) + " JUMP", x, 256, 8, white);
       text(keyName(keys.dash) + " TO DASH / " + keyName(keys.crouch) + " TO DUCK", x, 275, 8, dim);
     }
 
-    drawMenuOption("START BATTLE", 334, titleChoice == 0);
-    drawMenuOption("HOW TO BATTLE", 376, titleChoice == 1);
-    text("TWO PLAYERS / KEYBOARD OR TWO GAMEPADS", 400, 412, 8, dim, true);
+    if (titleChoice < 2) {
+      const char * hint
+        = titleChoice == 0 ? "LEFT / RIGHT CHANGES THE COMPUTER'S LEVEL" : "SHARE THE KEYBOARD OR USE TWO GAMEPADS";
+      text(hint, 400, 301, 8, dim, true);
+    }
+
+    drawMenuOption("1 PLAYER VS CPU", titleFirstY, titleChoice == 0);
+    drawMenuOption("2 PLAYER BATTLE", titleFirstY + titleSpacing, titleChoice == 1);
+    drawMenuOption("HOW TO BATTLE", titleFirstY + 2 * titleSpacing, titleChoice == 2);
   } else if (paused) {
     drawPanel("PAUSED", gold);
 

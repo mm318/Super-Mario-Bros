@@ -6,11 +6,12 @@
 #include <string>
 #include <unordered_map>
 
+#include "battle/BattleBot.h"
 #include "battle/BattleGame.h"
 
 class BattleScene {
 public:
-  explicit BattleScene(bool testMode = false);
+  explicit BattleScene(bool testMode = false, bool demo = false);
   ~BattleScene();
 
   void handleEvent(const SDL_Event & event);
@@ -18,6 +19,9 @@ public:
 
 private:
   battle::BattleGame game;
+
+  // A computer player replaces the matching human input while it exists.
+  std::array<std::unique_ptr<battle::BattleBot>, 2> bots;
 
   SDL_Renderer * renderer;
 
@@ -41,9 +45,10 @@ private:
   std::vector<Particle> particles;
 
   bool        title = true, paused = false, help = false, muted = false, focused = true, fullscreen = false;
+  bool        versusCpu = true, demo = false;
   double      previous = 0, accumulator = 0;
   float       animation = 0, resultDelay = 0, noticeTimer = 0;
-  int         titleChoice = 0, pauseChoice = 0;
+  int         titleChoice = 0, pauseChoice = 0, cpuLevel = 1;
   std::string notice;
 
   void openController(int index);

@@ -472,7 +472,7 @@ void BattleGame::bumpSegment(unsigned index, int player) {
     players[other].grounded = false;
   }
 
-  if (s.hiddenItem) {
+  if (s.hiddenItem && rules.spawning) {
     s.hiddenItem = false;
     Item item;
     item.type      = randomMushroom();
@@ -838,8 +838,12 @@ void BattleGame::collisions(float dt, const std::array<Player, 2> & previous) {
 }
 
 void BattleGame::stunPlayer(int index, float seconds) {
-  auto & p    = players[index];
-  p.stunTimer = std::max(p.stunTimer, seconds);
+  auto & p = players[index];
+  if (p.stunTimer > 0) {
+    return; // A stun runs its course: hits during it neither refresh nor extend it.
+  }
+
+  p.stunTimer = seconds;
   p.crouched  = p.super;
   p.vx        = 0;
   emit(EventType::Stun, p.x, p.y, index);
@@ -964,7 +968,7 @@ void BattleGame::step(float dt, const std::array<Input, 2> & inputs) {
                              }),
               items.end());
 
-  if (phase != Phase::Playing) {
+  if (phase != Phase::Playing || !rules.spawning) {
     return;
   }
 

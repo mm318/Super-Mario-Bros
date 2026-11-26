@@ -6,6 +6,7 @@ const source_files = [_][]const u8{
     "Core.cpp",
     "TextureManager.cpp",
     "SoundManager.cpp",
+    "battle/BattleBot.cpp",
     "battle/BattleGame.cpp",
     "battle/BattleScene.cpp",
     "main.cpp",
@@ -50,7 +51,24 @@ pub fn build(b: *Build) void {
         .flags = &.{ "-std=c++17", "-Wall", "-Wextra", "-Werror" },
     });
     const tests = b.addExecutable(.{ .name = "battle-tests", .root_module = test_module });
-    b.step("test", "Check battle rules and deterministic simulation").dependOn(&b.addRunArtifact(tests).step);
+    const test_step = b.step("test", "Check battle rules, deterministic simulation, and the computer player");
+    test_step.dependOn(&b.addRunArtifact(tests).step);
+
+    // The computer player simulates hundreds of steps per step, so its tests
+    // need optimized code to finish quickly. Safety checks stay on.
+    const bot_test_module = b.createModule(.{
+        .target = b.graph.host,
+        .optimize = .safe,
+        .link_libc = true,
+        .link_libcpp = true,
+    });
+    bot_test_module.addIncludePath(b.path("include"));
+    bot_test_module.addCSourceFiles(.{
+        .files = &.{ "tests/BattleBotTests.cpp", "src/battle/BattleBot.cpp", "src/battle/BattleGame.cpp" },
+        .flags = &.{ "-std=c++17", "-Wall", "-Wextra", "-Werror" },
+    });
+    const bot_tests = b.addExecutable(.{ .name = "battle-bot-tests", .root_module = bot_test_module });
+    test_step.dependOn(&b.addRunArtifact(bot_tests).step);
 
     const emsdk = b.dependency("emsdk", .{});
     b.step("install-emsdk", "Install Emscripten 7.0.0 in zig-pkg").dependOn(emSdkInstallStep(b, emsdk));

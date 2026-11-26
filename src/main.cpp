@@ -34,10 +34,13 @@ void runLoop(void * data) {
 #endif
 
 int main(int argc, char ** argv) {
-  bool testMode = false;
+  bool testMode = false, demo = false;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--test") == 0) {
       testMode = true;
+    }
+    if (std::strcmp(argv[i], "--demo") == 0) {
+      demo = true;
     }
   }
 
@@ -61,7 +64,7 @@ int main(int argc, char ** argv) {
   }
 #endif
 
-  Core core(testMode);
+  Core core(testMode, demo);
 
 #ifdef __EMSCRIPTEN__
   emscripten_set_main_loop_arg(runLoop, &core, 0, 1);
