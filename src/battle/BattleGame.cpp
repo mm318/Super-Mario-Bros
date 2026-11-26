@@ -273,6 +273,7 @@ void BattleGame::updatePlayer(int index, const Input & in, float dt) {
   if (!stunned && in.jump && !p.jumpHeld && p.grounded) {
     p.vy       = -rules.jumpSpeed;
     p.grounded = false;
+    p.jumping  = true;
     p.crouched = false;
     emit(EventType::Jump, p.x, p.y, index);
   }
@@ -346,6 +347,7 @@ void BattleGame::updatePlayer(int index, const Input & in, float dt) {
       p.y        = landing;
       p.vy       = 0;
       p.grounded = true;
+      p.jumping  = false;
     }
   }
 }
@@ -609,9 +611,24 @@ void BattleGame::updateDefeatedEnemies(float dt) {
   defeatedEnemies.erase(std::remove_if(defeatedEnemies.begin(),
                                        defeatedEnemies.end(),
                                        [](const Enemy & enemy) {
-                                         return enemy.y - enemy.height() > 480;
+                                         return enemy.y - enemy.height() > screenHeight;
                                        }),
                         defeatedEnemies.end());
+}
+
+void BattleGame::updateEliminatedPlayers(float dt) {
+  for (auto & p : players) {
+    if (p.eliminated && p.y - p.height() <= screenHeight) {
+      p.vy += rules.gravity * dt;
+      p.y += p.vy * dt;
+    }
+  }
+}
+
+bool BattleGame::dying() const {
+  return std::any_of(players.begin(), players.end(), [](const Player & p) {
+    return p.eliminated && p.y - p.height() <= screenHeight;
+  });
 }
 
 void BattleGame::updateBoos(float dt) {
@@ -663,7 +680,13 @@ void BattleGame::hurtPlayer(int index) {
     p.grounded           = false;
     emit(EventType::Hurt, p.x, p.y, index);
   } else {
-    p.eliminated = true;
+    // Out of the round: hop, then drop through the arena and off the screen.
+    p.eliminated   = true;
+    p.grounded     = false;
+    p.invulnerable = 0;
+    p.stunTimer    = 0;
+    p.vx           = 0;
+    p.vy           = -rules.deathPopSpeed;
     emit(EventType::Death, p.x, p.y, index);
     winRound(1 - index, false);
   }
@@ -860,7 +883,10 @@ void BattleGame::collidePlayers(const std::array<Player, 2> & previous) {
     dx                       = std::min(dx, width - dx);
     const bool descending    = a.vy > 0 && a.y - previous[attacker].y > top - previousTop;
     if (descending && dx < 24 && previous[attacker].y <= previousTop + 2 && a.y >= top) {
-      stunPlayer(victim, rules.stompStunSeconds);
+      // A stomp and a jump are both attacks: they cancel, leaving only the bounce.
+      if (!b.jumping) {
+        stunPlayer(victim, rules.stompStunSeconds);
+      }
       bouncePlayer(attacker, top);
       return;
     }
@@ -924,6 +950,7 @@ void BattleGame::step(float dt, const std::array<Input, 2> & inputs) {
 
   events.clear();
   updateDefeatedEnemies(dt);
+  updateEliminatedPlayers(dt);
 
   if (phase == Phase::Ready) {
     readyTimer -= dt;

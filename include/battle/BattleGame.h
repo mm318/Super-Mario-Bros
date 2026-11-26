@@ -31,6 +31,7 @@ struct Rules {
   float koopaSpeed = 65, shellSpeed = 350;
   float shellKickGrace     = .10f;
   float defeatedDriftSpeed = 80, defeatedPopSpeed = 100;
+  float deathPopSpeed = 420; // A knocked-out player's hop before dropping off the screen.
 
   float mushroomSpeed = 78, mushroomChance = .6f, itemBumpSpeed = 240;
 
@@ -42,7 +43,7 @@ struct Rules {
   constexpr static int coinsToWin = 5, roundsToWin = 5;
 };
 
-constexpr float width = 800, floorY = 448;
+constexpr float width = 800, floorY = 448, screenHeight = 480;
 constexpr int   hudHeight    = 28;
 constexpr float topPlatformY = 104, middlePlatformY = 224, lowerPlatformY = 344;
 constexpr float platformThickness = 32;
@@ -58,6 +59,7 @@ struct Input {
 
 struct Player : Body {
   bool  super = true, crouched = false, eliminated = false, jumpHeld = false;
+  bool  jumping      = false; // In the air from their own jump, which cancels a stomp.
   float invulnerable = 0;
   float stunTimer    = 0;
   int   coins = 0, facing = 1;
@@ -161,6 +163,9 @@ public:
 
   static std::vector<EnemyType> roster(int round);
 
+  // True while a knocked-out player is still falling off the screen.
+  bool dying() const;
+
   Rules rules;
 
   std::array<Player, 2> players;
@@ -199,6 +204,7 @@ private:
   void updateEnemies(float dt);
   void defeatEnemy(Enemy & enemy, int player);
   void updateDefeatedEnemies(float dt);
+  void updateEliminatedPlayers(float dt);
   void updateItems(float dt);
   void updateBoos(float dt);
 

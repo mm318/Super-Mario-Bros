@@ -1442,6 +1442,104 @@ void powStunsPlayers() {
   }
 }
 
+// A stomp and a jump are both attacks: landing on a player in the middle of
+// their own jump bounces the stomper away and stuns nobody.
+void jumpsCancelStomps() {
+  auto   g         = quiet();
+  auto & stomper   = g.players[0];
+  auto & jumper    = g.players[1];
+  jumper.x         = 352;
+  stomper.x        = 352;
+  stomper.y        = floorY - 48 - 60;
+  stomper.vy       = 200;
+  stomper.grounded = false;
+
+  std::array<Input, 2> in{};
+  in[1].jump   = true;
+  bool clashed = false;
+  for (int frame = 0; frame < 60 && !clashed; ++frame) {
+    g.step(dt, in);
+    clashed = stomper.vy < 0;
+    CHECK(!stunEvent(g));
+  }
+
+  CHECK(clashed && jumper.jumping && !jumper.grounded);
+  CHECK(jumper.stunTimer == 0 && stomper.stunTimer == 0);
+
+  // Landing ends the jump; the next stomp stuns as usual.
+  in = {};
+  for (int frame = 0; frame < 240 && !(jumper.grounded && stomper.grounded); ++frame) {
+    g.step(dt, in);
+  }
+  CHECK(jumper.grounded && !jumper.jumping && jumper.stunTimer == 0);
+  stomper.x        = jumper.x;
+  stomper.y        = jumper.y - jumper.height() - 8;
+  stomper.vy       = 220;
+  stomper.grounded = false;
+  for (int frame = 0; frame < 30 && jumper.stunTimer == 0; ++frame) {
+    g.step(dt, in);
+  }
+  CHECK(jumper.stunTimer > 0);
+
+  // Only a jump protects: falling off a ledge does not.
+  g                     = quiet();
+  auto & faller         = g.players[1];
+  faller.x              = 352;
+  faller.y              = floorY - 40;
+  faller.grounded       = false;
+  g.players[0].x        = 352;
+  g.players[0].y        = faller.y - faller.height() - 8;
+  g.players[0].vy       = 400;
+  g.players[0].grounded = false;
+  for (int frame = 0; frame < 30 && faller.stunTimer == 0; ++frame) {
+    g.step(dt, {});
+  }
+  CHECK(faller.stunTimer > 0 && !faller.jumping);
+}
+
+// A knocked-out player hops, then drops through every platform and off the
+// screen while the rest of the arena stands still.
+void eliminatedPlayersFallAway() {
+  for (float y : {floorY, middlePlatformY, topPlatformY}) {
+    auto   g         = quiet();
+    auto & p         = g.players[0];
+    p.x              = 200;
+    p.y              = y;
+    p.super          = false;
+    p.stunTimer      = .3f;
+    const auto rival = g.players[1];
+
+    g.hurtPlayer(0);
+    CHECK(p.eliminated && g.phase == Phase::RoundOver && g.winner == 1);
+    CHECK(g.dying() && p.vy < 0 && p.stunTimer == 0 && p.invulnerable == 0);
+
+    std::array<Input, 2> in{};
+    in[1].right = in[1].jump = true;
+    float t                  = 0;
+    for (; g.dying() && t < 3; t += dt) {
+      g.step(dt, in);
+    }
+
+    CHECK(!g.dying() && p.y - p.height() > screenHeight && p.x == 200);
+    CHECK(t > .5f && t < 1.5f);
+    CHECK(g.players[1].x == rival.x && g.players[1].y == rival.y);
+
+    const float bottom = p.y;
+    tick(g, 1);
+    CHECK(p.y == bottom);
+
+    g.nextRound();
+    CHECK(!g.dying() && !g.players[0].eliminated);
+  }
+
+  // Winning on coins leaves nobody to fall.
+  auto g             = quiet();
+  g.players[0].coins = 4;
+  Item coin;
+  g.collectItem(coin, 0);
+  CHECK(g.phase == Phase::RoundOver && g.winner == 0 && !g.dying());
+}
+
 // Paused spawning holds back every arrival, then lets them through once resumed.
 void spawningPauses() {
   Rules rules;
@@ -1598,6 +1696,8 @@ int main() {
   playerStompsAndStuns();
   platformPlayerStuns();
   stunsDoNotRefresh();
+  jumpsCancelStomps();
+  eliminatedPlayersFallAway();
   powStunsPlayers();
   spawningPauses();
   emptyRoundsAndPipeSpawns();

@@ -513,7 +513,8 @@ void BattleScene::update() {
   }
 
   if (focused && !title && !paused && !help) {
-    if (game.phase == battle::Phase::RoundOver || game.phase == battle::Phase::MatchOver) {
+    // The result waits until a knocked-out player has fallen off the screen.
+    if ((game.phase == battle::Phase::RoundOver || game.phase == battle::Phase::MatchOver) && !game.dying()) {
       resultDelay += dt;
     }
 
@@ -603,7 +604,7 @@ void BattleScene::sprite(SDL_Texture * t, SDL_Rect s, SDL_Rect d, bool flip, boo
 }
 
 void BattleScene::drawPlayer(const battle::Player & p, int i) {
-  if (p.eliminated) {
+  if (p.eliminated && p.y - p.height() > battle::screenHeight) {
     return;
   }
 
@@ -615,7 +616,8 @@ void BattleScene::drawPlayer(const battle::Player & p, int i) {
   if (!p.grounded) {
     frame = 6;
   }
-  if (stunned || p.crouched) {
+  // Column 2 is the crouch when Super and the knocked-out pose when Small.
+  if (stunned || p.crouched || p.eliminated) {
     frame = 1;
   }
 
@@ -916,7 +918,7 @@ void BattleScene::render() {
     rect(215, 176, 370, 112, ink);
     text("ROUND " + std::to_string(game.round), 400, 194, 24, gold, true);
     text(game.readyTimer < .8f ? "BATTLE!" : "GET READY", 400, 239, 16, white, true);
-  } else if (game.phase == battle::Phase::RoundOver || game.phase == battle::Phase::MatchOver) {
+  } else if ((game.phase == battle::Phase::RoundOver || game.phase == battle::Phase::MatchOver) && !game.dying()) {
     const bool match = game.phase == battle::Phase::MatchOver;
     drawPanel(std::string(name(game.winner)) + (match ? " WINS THE MATCH!" : " WINS THE ROUND!"),
               game.winner == 0 ? red : green);

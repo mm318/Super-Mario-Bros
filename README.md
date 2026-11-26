@@ -49,6 +49,7 @@ loses focus.
 - Both players start Super. One hit shrinks you; another while Small loses the round.
 - Stomp your rival or bump the platform under them to stun them briefly. A
   stunned player cannot be stunned again until the first stun wears off.
+- Jumping is an attack too: a stomp on a player in mid-jump just bounces off.
 - Use mushrooms and the POW block to turn the tables on your rival.
 
 Choose **How to Battle** from the title or pause menu for more help.
