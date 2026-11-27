@@ -223,6 +223,144 @@ void goesAroundUnderLowCeilings() {
   CHECK(blocked.players[0].coins == 1 && blocked.players[1].coins == 0);
 }
 
+void givesWayInALowLane() {
+  // Under the lower platform nobody can hop over anybody. A rival walking
+  // straight at the bot will not get past either, so instead of trading
+  // shoves the bot turns and laps the arena the other way.
+  Rules r     = quietRules();
+  r.coinSpeed = 0;
+
+  BattleGame g = quiet(r);
+  BattleBot  luigi(1);
+  g.players[0].x = 100;
+  g.players[1].x = 250;
+  addCoin(g, 20, floorY);
+
+  int shoved = 0;
+  for (int frame = 0; frame < 8 * 120 && g.players[1].coins == 0; ++frame) {
+    std::array<Input, 2> in{};
+    in[0].right = g.players[0].x > 60 && g.players[0].x < 400; // Marches toward the bot.
+    in[1]       = luigi.update(g, dt);
+    g.step(dt, in);
+    ++steps;
+    for (const auto & e : g.events) {
+      shoved += e.type == EventType::Push && e.player == 1;
+    }
+  }
+  CHECK(g.players[1].coins == 1 && g.players[0].coins == 0 && shoved <= 1);
+}
+
+void hopsOverInTheOpen() {
+  // With nothing overhead an oncoming rival is no wall: the bot goes over
+  // them rather than the long way round.
+  Rules r     = quietRules();
+  r.coinSpeed = 0;
+
+  BattleGame g = quiet(r);
+  BattleBot  luigi(1);
+  g.players[0].x  = 210;
+  g.players[0].vx = g.rules.walkSpeed;
+  g.players[1].x  = 300;
+  for (auto & p : g.players) {
+    p.y = topPlatformY;
+  }
+  addCoin(g, 110, topPlatformY);
+
+  float took = 0;
+  for (; took < 4 && g.players[1].coins == 0; took += dt) {
+    std::array<Input, 2> in{};
+    in[0].right = g.players[0].x < 290; // Marches toward the bot.
+    in[1]       = luigi.update(g, dt);
+    g.step(dt, in);
+    ++steps;
+  }
+  CHECK(g.players[1].coins == 1 && took < 1.5f);
+}
+
+void twoBotsPassInALowLane() {
+  // Two bots meet head on under the lower platform, each bound for beyond
+  // the other. Each gives way at once and goes round, instead of trading
+  // shoves or waiting for the other to move.
+  struct Crossing {
+    float marioFrom, luigiFrom, marioTo, luigiTo;
+  };
+  for (const auto & c : {
+         Crossing{790, 600, 560, 740},
+         Crossing{300,  30,  60, 280},
+         Crossing{ 30, 300, 300,  20}
+  }) {
+    BotConfig marioSpot, luigiSpot;
+    marioSpot.waitX = c.marioTo;
+    luigiSpot.waitX = c.luigiTo;
+    marioSpot.waitY = luigiSpot.waitY = floorY;
+
+    BattleGame g = quiet();
+    BattleBot  mario(0, marioSpot), luigi(1, luigiSpot);
+    g.players[0].x = c.marioFrom;
+    g.players[1].x = c.luigiFrom;
+
+    // Shoving the yielder along from behind is fine; trading head-on
+    // shoves is what a stand-off looks like. Bots count a spot within a
+    // tenth of a second's run as reached.
+    int        clashes = 0;
+    const auto at      = [&](int i, float x) {
+      const float d = std::abs(g.players[i].x - x);
+      return std::min(d, width - d) < 30;
+    };
+    for (float t = 0; t < 3.8f && !(at(0, c.marioTo) && at(1, c.luigiTo)); t += dt) {
+      std::array<Input, 2> in{mario.update(g, dt), luigi.update(g, dt)};
+      g.step(dt, in);
+      ++steps;
+      int shoved = 0;
+      for (const auto & e : g.events) {
+        shoved += e.type == EventType::Push;
+      }
+      clashes += shoved == 2;
+    }
+    CHECK(at(0, c.marioTo) && at(1, c.luigiTo) && clashes <= 3);
+  }
+}
+
+void sharesAWaitingSpot() {
+  // In a demo both bots play one level, so they wait at the same place. The
+  // second one settles near the first instead of shoving them off it.
+  for (const auto & config : {BotConfig::easy(), BotConfig(), BotConfig::hard()}) {
+    BattleGame g = quiet();
+    BattleBot  mario(0, config), luigi(1, config);
+
+    int shoves = 0;
+    for (int frame = 0; frame < 12 * 120; ++frame) {
+      std::array<Input, 2> in{mario.update(g, dt), luigi.update(g, dt)};
+      g.step(dt, in);
+      ++steps;
+      for (const auto & e : g.events) {
+        shoves += frame > 4 * 120 && e.type == EventType::Push;
+      }
+    }
+    CHECK(shoves <= 2);
+    for (const auto & p : g.players) {
+      const float d = std::abs(p.x - config.waitX);
+      CHECK(std::abs(p.y - config.waitY) < 1 && std::min(d, width - d) < 120);
+    }
+  }
+}
+
+void hardBotsMoveOn() {
+  // From the round's mirror-image start, two Hard bots reach the POW block
+  // together. Each could stomp the other, but either can cancel that by
+  // jumping, so neither should stay there trying.
+  BattleGame g = quiet();
+  BattleBot  mario(0, BotConfig::hard()), luigi(1, BotConfig::hard());
+  for (int frame = 0; frame < 6 * 120; ++frame) {
+    std::array<Input, 2> in{mario.update(g, dt), luigi.update(g, dt)};
+    g.step(dt, in);
+    ++steps;
+  }
+  for (const auto & p : g.players) {
+    CHECK(p.y < middlePlatformY + 1);
+  }
+}
+
 void takesTheMushroomWhenSmall() {
   Rules r         = quietRules();
   r.mushroomSpeed = 0;
@@ -440,6 +578,11 @@ int main() {
   interceptsCoinsFromThePipes();
   jumpsEnemiesInTheWay();
   goesAroundUnderLowCeilings();
+  givesWayInALowLane();
+  hopsOverInTheOpen();
+  twoBotsPassInALowLane();
+  sharesAWaitingSpot();
+  hardBotsMoveOn();
   takesTheMushroomWhenSmall();
   survivesAndScoresInARealRound();
   sparesAStunnedRival();

@@ -1497,6 +1497,262 @@ void jumpsCancelStomps() {
   CHECK(faller.stunTimer > 0 && !faller.jumping);
 }
 
+int pushEvents(const BattleGame & g, int player) {
+  int count = 0;
+  for (const auto & e : g.events) {
+    count += e.type == EventType::Push && e.player == player;
+  }
+  return count;
+}
+
+struct Shove {
+  bool  pushed[2] = {};
+  float slid[2]   = {}; // How far each pushed player travelled after contact.
+};
+
+// Walks Mario (from the left) and Luigi into each other on the floor; either
+// may stand still instead. Inputs stop at contact so only the shove moves them.
+Shove shove(bool marioSuper, bool luigiSuper, bool marioRuns, bool luigiRuns, bool dash = false) {
+  auto g              = quiet();
+  g.players[0].super  = marioSuper;
+  g.players[1].super  = luigiSuper;
+  g.players[0].x      = 300;
+  g.players[1].x      = 360;
+  g.players[1].facing = -1;
+  std::array<Input, 2> in{};
+  in[0].right = marioRuns;
+  in[1].left  = luigiRuns;
+  in[0].dash = in[1].dash = dash;
+
+  Shove result;
+  float start[2] = {};
+  for (int frame = 0; frame < 240; ++frame) {
+    g.step(dt, in);
+    for (int i = 0; i < 2; ++i) {
+      if (pushEvents(g, i)) {
+        result.pushed[i] = true;
+        start[i]         = g.players[i].x;
+        CHECK(g.players[i].pushTimer > 0 && g.players[i].skidding());
+        CHECK(g.players[i].vx * (i ? 1.f : -1.f) > 0); // Away from the runner.
+      }
+    }
+    if (result.pushed[0] || result.pushed[1]) {
+      break;
+    }
+  }
+
+  // A runner who shoved without being shoved stops at the rival.
+  for (int i = 0; i < 2; ++i) {
+    if (result.pushed[1 - i] && !result.pushed[i]) {
+      CHECK(g.players[i].vx == 0);
+    }
+  }
+
+  // Buttons do nothing during the slide: Luigi pressing back toward Mario
+  // and dashing still slides the full distance.
+  in         = {};
+  in[1].left = in[1].dash = true;
+  in[0].right = in[0].dash = true;
+  for (int frame = 0; frame < 120 && (g.players[0].pushTimer > 0 || g.players[1].pushTimer > 0); ++frame) {
+    std::array<Input, 2> now{};
+    for (int i = 0; i < 2; ++i) {
+      if (g.players[i].pushTimer > 0) {
+        now[i] = in[i];
+      }
+    }
+    g.step(dt, now);
+    CHECK(pushEvents(g, 0) + pushEvents(g, 1) == 0); // A slide is not renewed.
+  }
+  for (int i = 0; i < 2; ++i) {
+    CHECK(g.players[i].pushTimer == 0 && (!result.pushed[i] || std::abs(g.players[i].vx) < 20));
+    result.slid[i] = result.pushed[i] ? std::abs(g.players[i].x - start[i]) : 0;
+  }
+  return result;
+}
+
+// Running into a rival on the ground shoves them a little; how far depends on
+// who is bigger.
+void runningIntoPlayersPushes() {
+  const auto near = [](float value, float target) {
+    return std::abs(value - target) <= 2;
+  };
+
+  for (bool dash : {false, true}) {
+    // One runner, one standing rival: only the rival moves.
+    auto s = shove(true, true, true, false, dash);
+    CHECK(s.pushed[1] && !s.pushed[0] && near(s.slid[1], 16));
+    s = shove(false, false, false, true, dash);
+    CHECK(s.pushed[0] && !s.pushed[1] && near(s.slid[0], 16));
+
+    // Big into small goes twice as far, small into big half as far.
+    s = shove(true, false, true, false, dash);
+    CHECK(s.pushed[1] && !s.pushed[0] && near(s.slid[1], 32));
+    s = shove(false, true, true, false, dash);
+    CHECK(s.pushed[1] && !s.pushed[0] && near(s.slid[1], 8));
+
+    // Running into each other shoves both.
+    s = shove(true, true, true, true, dash);
+    CHECK(s.pushed[0] && s.pushed[1] && near(s.slid[0], 16) && near(s.slid[1], 16));
+    s = shove(true, false, true, true, dash);
+    CHECK(s.pushed[0] && s.pushed[1] && near(s.slid[0], 8) && near(s.slid[1], 32));
+  }
+
+  // Standing together, or leaning in slower than a walk, shoves nobody.
+  auto g         = quiet();
+  g.players[0].x = 300;
+  g.players[1].x = 320;
+  g.step(dt, {});
+  CHECK(pushEvents(g, 0) + pushEvents(g, 1) == 0 && g.players[0].vx == 0 && g.players[1].vx == 0);
+  g.players[0].vx = g.rules.pushSpeed - 5;
+  g.step(dt, {});
+  CHECK(pushEvents(g, 1) == 0 && g.players[1].pushTimer == 0);
+
+  // Catching up with a slide already under way does not renew it.
+  g                      = quiet();
+  g.players[0].x         = 300;
+  g.players[0].vx        = 200;
+  g.players[1].x         = 322;
+  g.players[1].vx        = 30;
+  g.players[1].pushTimer = .05f;
+  std::array<Input, 2> chase{};
+  chase[0].right = true;
+  g.step(dt, chase);
+  CHECK(pushEvents(g, 1) == 0 && g.players[0].vx > 100 && g.players[1].pushTimer < .05f);
+
+  // Contact in the air shoves just the same: Mario in the air, Luigi in the
+  // air, or both flying at each other.
+  for (int airborne = 0; airborne < 3; ++airborne) {
+    g               = quiet();
+    g.players[0].x  = 300;
+    g.players[0].vx = 180;
+    g.players[1].x  = 328;
+    g.players[1].vx = airborne == 2 ? -180 : 0;
+    for (int i = 0; i < 2; ++i) {
+      if (airborne == i || airborne == 2) {
+        g.players[i].y        = floorY - 30;
+        g.players[i].vy       = -200;
+        g.players[i].grounded = false;
+      }
+    }
+
+    bool  shoved = false;
+    float start  = 0;
+    for (int frame = 0; frame < 30 && !shoved; ++frame) {
+      g.step(dt, {});
+      shoved = pushEvents(g, 1) > 0;
+      start  = g.players[1].x;
+    }
+    CHECK(shoved && !g.players[airborne == 1 ? 1 : 0].grounded);
+    CHECK(g.players[1].vx > 0 && g.players[1].skidding());
+    CHECK(airborne == 2 ? pushEvents(g, 0) == 1 && g.players[0].vx < 0 : g.players[0].vx == 0);
+
+    while (g.players[1].pushTimer > 0) {
+      g.step(dt, {});
+    }
+    CHECK(std::abs(g.players[1].x - start - 16) <= 2);
+  }
+
+  // Drifting into someone in the air slower than a walk shoves nobody.
+  g                     = quiet();
+  g.players[0].x        = 300;
+  g.players[0].vx       = g.rules.pushSpeed - 5;
+  g.players[0].y        = floorY - 20;
+  g.players[0].grounded = false;
+  g.players[1].x        = 323;
+  g.step(dt, {});
+  CHECK(pushEvents(g, 0) + pushEvents(g, 1) == 0 && g.players[1].pushTimer == 0);
+
+  // A stunned player is standing still, so they can be shoved, and stay stunned.
+  g                      = quiet();
+  g.players[0].x         = 300;
+  g.players[1].x         = 350;
+  g.players[1].stunTimer = 1;
+  std::array<Input, 2> in{};
+  in[0].right = true;
+  for (int frame = 0; frame < 120 && !pushEvents(g, 1); ++frame) {
+    g.step(dt, in);
+  }
+  CHECK(g.players[1].pushTimer > 0 && g.players[1].stunTimer > 0 && !stunEvent(g));
+
+  // A brick side ends the slide; nobody is shoved through it.
+  g = quiet();
+  g.segments.push_back({384, floorY - platformThickness});
+  g.players[0].x = 330;
+  g.players[1].x = 365;
+  for (int frame = 0; frame < 120 && !pushEvents(g, 1); ++frame) {
+    g.step(dt, in);
+  }
+  const float slide  = g.players[1].pushTimer;
+  float       waited = 0;
+  while (g.players[1].vx != 0 && waited < 1) {
+    g.step(dt, {});
+    waited += dt;
+  }
+  CHECK(slide > 0 && waited < slide - .03f && g.players[1].pushTimer == 0);
+  CHECK(g.players[1].x <= 384 - 11 + .01f);
+
+  // A shove near an edge slides the rival off the platform.
+  g = quiet();
+  for (auto & p : g.players) {
+    p.y = lowerPlatformY;
+  }
+  g.players[0].x = 270;
+  g.players[1].x = 316; // The platform ends at 320.
+  for (int frame = 0; frame < 120 && !pushEvents(g, 1); ++frame) {
+    g.step(dt, in);
+  }
+  tick(g, .4f);
+  CHECK(g.players[1].y > lowerPlatformY + 20 && g.players[0].y == lowerPlatformY);
+}
+
+// Turning around at speed skids; so does sliding from a shove.
+void skidding() {
+  auto                 g = quiet();
+  auto &               p = g.players[0];
+  std::array<Input, 2> in{};
+  in[0].right = in[0].dash = true;
+  tick(g, .5f, in);
+  CHECK(p.vx > 250 && !p.skidding());
+
+  in[0].right = false;
+  in[0].left  = true;
+  g.step(dt, in);
+  CHECK(p.facing < 0 && p.vx > 0 && p.skidding());
+  while (p.vx > skidSpeed) {
+    CHECK(p.skidding());
+    g.step(dt, in);
+  }
+  CHECK(!p.skidding());
+  tick(g, .3f, in);
+  CHECK(p.vx < -250 && !p.skidding());
+
+  // Letting go only slows down, and turning from a crawl is not a skid.
+  tick(g, .02f);
+  CHECK(!p.skidding());
+  p.vx        = -skidSpeed + 10;
+  in          = {};
+  in[0].right = true;
+  g.step(dt, in);
+  CHECK(!p.skidding());
+
+  // Turning skids happen on the ground only.
+  g          = quiet();
+  p.y        = floorY - 100;
+  p.vx       = 280;
+  p.grounded = false;
+  in         = {};
+  in[0].left = true;
+  g.step(dt, in);
+  CHECK(!p.grounded && p.facing < 0 && p.vx > skidSpeed && !p.skidding());
+
+  // A shove skids even facing the way of the slide.
+  g           = quiet();
+  p.facing    = 1;
+  p.vx        = 200;
+  p.pushTimer = .1f;
+  CHECK(p.skidding());
+}
+
 // A knocked-out player hops, then drops through every platform and off the
 // screen while the rest of the arena stands still.
 void eliminatedPlayersFallAway() {
@@ -1697,6 +1953,8 @@ int main() {
   platformPlayerStuns();
   stunsDoNotRefresh();
   jumpsCancelStomps();
+  runningIntoPlayersPushes();
+  skidding();
   eliminatedPlayersFallAway();
   powStunsPlayers();
   spawningPauses();

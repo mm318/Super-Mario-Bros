@@ -33,6 +33,11 @@ struct Rules {
   float defeatedDriftSpeed = 80, defeatedPopSpeed = 100;
   float deathPopSpeed = 420; // A knocked-out player's hop before dropping off the screen.
 
+  // Running or jumping into a rival shoves them this far. A Super player
+  // shoves a Small one twice as far and a Small player shoves a Super one half
+  // as far. Slower than pushSpeed is leaning, not running into them.
+  float pushDistance = 16, pushSpeed = 40;
+
   float mushroomSpeed = 78, mushroomChance = .6f, itemBumpSpeed = 240;
 
   float booWaveSpeed = 66, booDiagonalSpeed = 82, booVerticalSpeed = 74;
@@ -57,15 +62,25 @@ struct Input {
   bool left = false, right = false, jump = false, dash = false, down = false;
 };
 
+// Slower than this, turning around is a walk, not a skid.
+constexpr float skidSpeed = 60;
+
 struct Player : Body {
   bool  super = true, crouched = false, eliminated = false, jumpHeld = false;
   bool  jumping      = false; // In the air from their own jump, which cancels a stomp.
   float invulnerable = 0;
   float stunTimer    = 0;
+  float pushTimer    = 0; // Sliding from a rival's shove, with left and right ignored.
   int   coins = 0, facing = 1;
 
   float height() const {
     return super && !crouched ? 48.f : 28.f;
+  }
+
+  // Shoved by the rival, even in the air, or braking hard on the ground
+  // against their own run to turn around.
+  bool skidding() const {
+    return pushTimer > 0 || (grounded && facing * vx < -skidSpeed);
   }
 };
 
@@ -130,6 +145,7 @@ enum class EventType {
   Hurt,
   Death,
   Pow,
+  Push,
   Mushroom,
   SizeSwap,
   PositionSwap,
@@ -199,6 +215,7 @@ private:
   void collidePlayerCeiling(int index, float oldTop);
   void bouncePlayer(int index, float top);
   void stunPlayer(int index, float seconds);
+  void pushPlayer(int index, int direction, float distance);
   void collidePlayers(const std::array<Player, 2> & previous);
 
   void updateEnemies(float dt);

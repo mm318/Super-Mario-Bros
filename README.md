@@ -50,6 +50,10 @@ loses focus.
 - Stomp your rival or bump the platform under them to stun them briefly. A
   stunned player cannot be stunned again until the first stun wears off.
 - Jumping is an attack too: a stomp on a player in mid-jump just bounces off.
+- Run or jump into your rival to shove them a little way; any real sideways
+  speed counts, dashing or not. A Super player shoves a Small one twice as far;
+  a Small player shoves a Super one half as far. Running into each other shoves
+  you both.
 - Use mushrooms and the POW block to turn the tables on your rival.
 
 Choose **How to Battle** from the title or pause menu for more help.
@@ -83,6 +87,12 @@ same rules. It lives in `src/battle/BattleBot.cpp` and thinks in three layers:
 It never knows what is coming next: its look-ahead spawns nothing, so each
 enemy, boo, coin, and mushroom is a surprise until it appears. It does know
 that pipes release them, and keeps clear of the pipe mouths.
+
+Under a platform too low to hop over each other, the computer gives way to a
+rival coming straight at it and takes the long way round instead of trading
+shoves. It won't shove a rival toward a coin, and it doesn't bump into you for
+no reason. It counts a stomp as only a chance, because you can jump to cancel
+it.
 
 Easy walks instead of dashing, waits on the floor, reacts slowly, and leaves
 you alone. Normal dashes, waits mid-arena, and plans ahead. Hard waits between

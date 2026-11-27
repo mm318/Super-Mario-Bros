@@ -16,6 +16,8 @@ namespace {
   constexpr float coinReward = 100, rivalCoinPenalty = 30, growReward = 80, hurtPenalty = 150;
   constexpr float roundReward = 1000, rivalHurtReward = 90;
   constexpr float stunnedPenalty = 35, rivalStunReward = 14;
+  constexpr float stompOdds = .3f; // A rival who jumps in time cancels a stomp, so one seen ahead is only a chance.
+  constexpr float shoveCost = 4;   // Bumping into the rival for no gain.
   constexpr float powReward = 70, powWaste = 18, swapPenalty = 15;
   constexpr float kickReward = 45, kickWaste = 8, wrongKick = 25, defeatReward = 6;
   constexpr float secondsWeight = 22, enemyWeight = 26, booWeight = 30;
@@ -341,24 +343,31 @@ float BattleBot::travel(const Place & from, const Place & to) const {
 }
 
 // Walking distance that goes the other way around a blocking rival.
-float BattleBot::detour(int span, float a, float b) const {
+float BattleBot::detour(int span, float a, float b, const Place & block) const {
   const float d = walk(span, a, b);
-  if (span != wall.span) {
+  if (span != block.span) {
     return d;
   }
 
   const bool loop    = spans[span].length >= width;
-  const bool inside  = wall.s > std::min(a, b) && wall.s < std::max(a, b);
+  const bool inside  = block.s > std::min(a, b) && block.s < std::max(a, b);
   const bool blocked = loop && std::abs(a - b) > width / 2 ? !inside : inside;
   return !blocked ? d : loop ? width - d : d + 3 * runSpeed;
 }
 
-float BattleBot::timeToGoal(const Place & from) const {
-  float best = from.span == goalPlace.span ? detour(from.span, from.s, goalPlace.s) / runSpeed : far;
+float BattleBot::timeToGoal(const Place & from, const Place & block) const {
+  float best = from.span == goalPlace.span ? detour(from.span, from.s, goalPlace.s, block) / runSpeed : far;
   for (int a : nodesOn[from.span]) {
-    best = std::min(best, detour(from.span, from.s, nodes[a].s) / runSpeed + toGoal[a]);
+    best = std::min(best, detour(from.span, from.s, nodes[a].s, block) / runSpeed + toGoal[a]);
   }
   return best;
+}
+
+// Where the rival stands as a wall, if they count as one.
+BattleBot::Place BattleBot::blocker(const BattleGame & game) const {
+  const auto & rival = game.players[1 - self];
+  const Place  at    = locate(rival.x, rival.y);
+  return wallSpan >= 0 && at.span == wallSpan ? at : Place{-1, 0};
 }
 
 float BattleBot::travelTime(const BattleGame & game, float fromX, float fromY, float toX, float toY) {
@@ -387,23 +396,43 @@ void BattleBot::watchProgress(const BattleGame & game) {
   const Place  mine  = locate(me.x, me.y);
   const Place  block = locate(rival.x, rival.y);
 
-  // The wall stands for as long as the rival does.
-  if (wall.span >= 0 && (!rival.grounded || block.span != wall.span || walk(wall.span, block.s, wall.s) > 50)) {
-    wall.span = -1;
+  // The wall stands for as long as the rival lingers near where it rose.
+  if (wallSpan >= 0 && (!rival.grounded || block.span != wallSpan || walk(wallSpan, block.s, wallStart) > 50)) {
+    wallSpan = -1;
   }
 
-  const float left = timeToGoal(mine);
+  const Place wall     = blocker(game);
+  const float left     = timeToGoal(mine, wall);
+  const float toward   = offset(me.x, rival.x) > 0 ? 1.f : -1.f;
+  const bool  inTheWay = rival.grounded && me.grounded && block.span == mine.span
+                     && walk(mine.span, mine.s, block.s) < 200
+                     && timeToGoal(locate(me.x + toward * 16, me.y), wall) < left;
+  const auto detour = [&] {
+    wallSpan  = block.span;
+    wallStart = block.s;
+    closest   = far;
+  };
+
+  // An oncoming rival in the way counts as a wall at once. Where a hop
+  // clears them the lookahead still finds it; under a low platform the bot
+  // takes the other way round instead of trading shoves that send both
+  // back.
+  if (wallSpan < 0 && inTheWay && rival.vx * toward < -30) {
+    detour();
+    return;
+  }
+
   if (left <= .2f || left < closest - .05f || left > closest + .5f) {
     closest = left;
     stalled = 0;
     return;
   }
 
+  // Shoving a rival toward the goal can hand it to them, so the bot may stop
+  // short instead of pressing against them. Either way they are in the way.
   stalled += config.strategySeconds;
-  if (stalled > .75f && rival.grounded && me.grounded && block.span == mine.span
-      && walk(mine.span, mine.s, block.s) < 40) {
-    wall    = block;
-    closest = far;
+  if (stalled > .75f && inTheWay) {
+    detour();
   }
 }
 
@@ -639,15 +668,21 @@ float BattleBot::rollout(const BattleGame & game, const Plan & candidate, float 
   const int   horizon    = static_cast<int>(config.horizon / dt + .5f);
   const int   limit      = std::max(horizon, static_cast<int>(config.maxHorizon / dt + .5f));
 
-  // Credit the best point along the way: the next decision can stop or turn
-  // there, so running past a jump-off spot must not look like a setback.
-  float      nearest = timeToGoal(locate(game.players[self].x, game.players[self].y));
-  const bool there   = nearest < arrived;
-
   // Arrivals (pipes, boos, the mushroom block, POW refills) stay as unknown
   // to the bot as they are to a person until they actually appear.
   BattleGame sim     = game;
   sim.rules.spawning = false;
+
+  // A rival counted as a wall blocks from wherever the copy has them, so
+  // shoving them along does not get the bot past.
+  const auto remaining = [&](const Player & p) {
+    return timeToGoal(locate(p.x, p.y), blocker(sim));
+  };
+
+  // Credit the best point along the way: the next decision can stop or turn
+  // there, so running past a jump-off spot must not look like a setback.
+  float      nearest = remaining(sim.players[self]);
+  const bool there   = nearest < arrived;
 
   PlanState state;
   float     score = 0;
@@ -677,10 +712,14 @@ float BattleBot::rollout(const BattleGame & game, const Plan & candidate, float 
       score -= stunnedPenalty;
     }
     if (rival.stunTimer > rivalBefore.stunTimer && harassCooldown <= 0) {
-      score += rivalStunReward * config.aggression;
+      const bool stomp = rival.stunTimer <= game.rules.stompStunSeconds + .01f;
+      score += rivalStunReward * config.aggression * (stomp ? stompOdds : 1.f);
     }
 
     for (const auto & event : sim.events) {
+      if (event.type == EventType::Push && event.player == rivalIndex) {
+        score -= shoveCost;
+      }
       if (event.player != self) {
         continue;
       }
@@ -716,7 +755,7 @@ float BattleBot::rollout(const BattleGame & game, const Plan & candidate, float 
       score -= hurtPenalty;
       break;
     }
-    nearest = std::min(nearest, patience * (tick + 1) * dt + timeToGoal(locate(me.x, me.y)));
+    nearest = std::min(nearest, patience * (tick + 1) * dt + remaining(me));
     // A stun is only as bad as what reaches us before it wears off.
     if (tick + 1 >= horizon && me.grounded && me.stunTimer <= 0) {
       break;
@@ -725,7 +764,7 @@ float BattleBot::rollout(const BattleGame & game, const Plan & candidate, float 
 
   // Already at the goal, every plan is equally close along the way, so where
   // it ends decides: stay at a waiting spot instead of running past it.
-  const float end = there ? timeToGoal(locate(sim.players[self].x, sim.players[self].y)) : 0;
+  const float end = there ? remaining(sim.players[self]) : 0;
   return score - secondsWeight * (nearest + settle * end) - danger(sim);
 }
 
@@ -801,7 +840,7 @@ Input BattleBot::update(const BattleGame & game, float dt) {
     untilDecision = 0;
     untilStrategy = powCooldown = harassCooldown = 0;
     current                                      = {};
-    wall.span                                    = -1;
+    wallSpan                                     = -1;
     closest = stalled = 0;
   }
 

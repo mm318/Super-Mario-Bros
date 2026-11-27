@@ -464,6 +464,8 @@ void BattleScene::processEvents() {
       case E::Death:
         s.playSound(SoundID::DEATH);
         break;
+      case E::Push:
+        break;
       case E::Pow:
         s.playSound(SoundID::BOWSER_FALL);
         notice      = "POW! ENEMIES FLIPPED / RIVAL STUNNED";
@@ -611,15 +613,21 @@ void BattleScene::drawPlayer(const battle::Player & p, int i) {
   const bool stunned = p.stunTimer > 0;
   const int  h = static_cast<int>(p.height()), w = p.super && !p.crouched ? 24 : 28;
 
-  // Both rows use columns 3-5 for walking and column 7 for jumping.
+  // Both rows use columns 3-5 for walking, column 6 for skidding or being
+  // shoved, and column 7 for jumping.
   int frame = std::abs(p.vx) > 20 ? 2 + static_cast<int>(animation * (std::abs(p.vx) > 190 ? 15 : 9)) % 3 : 0;
   if (!p.grounded) {
     frame = 6;
+  }
+  if (p.skidding()) {
+    frame = 5; // Shoved in the air too.
   }
   // Column 2 is the crouch when Super and the knocked-out pose when Small.
   if (stunned || p.crouched || p.eliminated) {
     frame = 1;
   }
+  // The skid pose looks back against the slide, so it mirrors with motion.
+  const bool mirror = frame == 5 ? p.vx < 0 : p.facing < 0;
 
   SDL_Rect src{1 + frame * 16, 9 + (i * 4 + (p.super ? 1 : 0)) * 16, 16, p.super ? 32 : 16};
   // The large crouch frame has ten blank rows above its 22-pixel pose.
@@ -632,7 +640,7 @@ void BattleScene::drawPlayer(const battle::Player & p, int i) {
     drawStunStars(p.x, p.y - h, false);
   }
   if (!(p.invulnerable > 0 && static_cast<int>(animation * 14) % 2)) {
-    sprite(playerTexture.get(), src, {static_cast<int>(p.x) - w / 2, static_cast<int>(p.y) - h, w, h}, p.facing < 0);
+    sprite(playerTexture.get(), src, {static_cast<int>(p.x) - w / 2, static_cast<int>(p.y) - h, w, h}, mirror);
   }
   if (stunned) {
     drawStunStars(p.x, p.y - h, true);

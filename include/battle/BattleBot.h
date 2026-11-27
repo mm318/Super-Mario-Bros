@@ -109,8 +109,11 @@ private:
   float     untilStrategy = 0, powCooldown = 0, harassCooldown = 0, rivalStun = 0;
 
   // A rival standing in the way under a low ceiling cannot be jumped over.
-  // After a moment without progress they count as a wall to route around.
-  Place wall{-1, 0};
+  // After a moment without progress, or at once when they come straight at
+  // the bot, they count as a wall to route around, wherever shoves move
+  // them along that span.
+  int   wallSpan  = -1;
+  float wallStart = 0; // Where along the span the rival stood when it rose.
   float closest = 0, stalled = 0;
   bool  idle = true;
 
@@ -120,9 +123,10 @@ private:
   int   support(float x, float y) const;
   Place locate(float x, float y) const;
   float walk(int span, float a, float b) const;
-  float detour(int span, float a, float b) const;
+  float detour(int span, float a, float b, const Place & block) const;
   float travel(const Place & from, const Place & to) const;
-  float timeToGoal(const Place & from) const;
+  float timeToGoal(const Place & from, const Place & block) const;
+  Place blocker(const BattleGame & game) const;
 
   void  chooseGoal(const BattleGame & game);
   void  setGoal(const Goal & goal);

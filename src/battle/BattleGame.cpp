@@ -263,7 +263,9 @@ void BattleGame::updatePlayer(int index, const Input & in, float dt) {
   const bool stunned = p.stunTimer > 0;
   p.crouched         = p.super && (stunned || (p.grounded && in.down));
 
-  const int   direction = stunned ? 0 : static_cast<int>(in.right) - static_cast<int>(in.left);
+  // A shove slides the player until friction stops them.
+  const bool  pushed    = p.pushTimer > 0;
+  const int   direction = stunned || pushed ? 0 : static_cast<int>(in.right) - static_cast<int>(in.left);
   const float target    = (p.crouched ? 0 : direction) * (in.dash ? rules.dashSpeed : rules.walkSpeed);
   p.vx                  = approach(p.vx, target, (direction ? rules.acceleration : rules.friction) * dt);
   if (direction) {
@@ -314,6 +316,9 @@ void BattleGame::updatePlayer(int index, const Input & in, float dt) {
 
   p.x = nextX;
   wrap(p);
+  if (p.vx == 0) {
+    p.pushTimer = 0; // The slide is over, or a brick side cut it short.
+  }
 
   const float oldFeet = p.y, oldTop = p.y - height;
   p.vy = std::min(p.vy + rules.gravity * dt, 700.f);
@@ -869,7 +874,17 @@ void BattleGame::stunPlayer(int index, float seconds) {
   p.stunTimer = seconds;
   p.crouched  = p.super;
   p.vx        = 0;
+  p.pushTimer = 0;
   emit(EventType::Stun, p.x, p.y, index);
+}
+
+void BattleGame::pushPlayer(int index, int direction, float distance) {
+  auto &      p     = players[index];
+  // Friction brings the slide to rest the given distance away.
+  const float speed = std::sqrt(2 * rules.friction * distance);
+  p.vx              = static_cast<float>(direction) * speed;
+  p.pushTimer       = speed / rules.friction;
+  emit(EventType::Push, p.x, p.y, index);
 }
 
 void BattleGame::collidePlayers(const std::array<Player, 2> & previous) {
@@ -902,6 +917,12 @@ void BattleGame::collidePlayers(const std::array<Player, 2> & previous) {
     if (dx < -width / 2) {
       dx += width;
     }
+
+    // Who ran into whom is settled before the bodies are pulled apart. Only
+    // horizontal speed counts, on the ground or in the air.
+    const int  toward = dx >= 0 ? 1 : -1; // From a to b.
+    const bool aRuns  = a.vx * static_cast<float>(toward) > rules.pushSpeed;
+    const bool bRuns  = b.vx * static_cast<float>(-toward) > rules.pushSpeed;
 
     const float push     = (dx >= 0 ? 1.f : -1.f) * (24 - std::abs(dx)) * .5f;
     const auto  canShift = [&](const Player & p, float shift) {
@@ -937,9 +958,25 @@ void BattleGame::collidePlayers(const std::array<Player, 2> & previous) {
 
     wrap(a);
     wrap(b);
-    const float av = a.vx;
-    a.vx           = b.vx * .65f;
-    b.vx           = av * .65f;
+
+    // A runner stops at the rival and shoves them; running into each other
+    // shoves both. A slide already under way is not renewed.
+    const auto distance = [&](const Player & runner, const Player & target) {
+      return rules.pushDistance * (runner.super == target.super ? 1.f : runner.super ? 2.f : .5f);
+    };
+    const bool shoveB = aRuns && b.pushTimer <= 0, shoveA = bRuns && a.pushTimer <= 0;
+    if (shoveB) {
+      a.vx = 0;
+    }
+    if (shoveA) {
+      b.vx = 0;
+    }
+    if (shoveB) {
+      pushPlayer(1, toward, distance(a, b));
+    }
+    if (shoveA) {
+      pushPlayer(0, -toward, distance(b, a));
+    }
   }
 }
 
@@ -972,6 +1009,7 @@ void BattleGame::step(float dt, const std::array<Input, 2> & inputs) {
   const auto previousPlayers = players;
   for (auto & p : players) {
     p.stunTimer = std::max(0.f, p.stunTimer - dt);
+    p.pushTimer = std::max(0.f, p.pushTimer - dt);
   }
   for (int i = 0; i < 2; ++i) {
     updatePlayer(i, inputs[i], dt);
