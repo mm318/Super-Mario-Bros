@@ -175,8 +175,21 @@ fn emLinkStep(
     lib: *Build.Step.Compile,
     optimize: std.builtin.Optimize,
 ) *Build.Step.InstallDir {
-    const link = b.addRunFile(emTool(b, emsdk, "em++"));
+    // Link from inside the output directory so the generated loader names
+    // its data package "index.data" instead of a path into the build cache.
+    // Inputs are absolute because they are no longer relative to the child.
+    const run_in_dir = b.addExecutable(.{
+        .name = "run-in-dir",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("res/run_in_dir.zig"),
+            .target = b.graph.host,
+            .optimize = .fast,
+        }),
+    });
+    const link = b.addRunArtifact(run_in_dir);
     link.setName("Emscripten link Super Mario Bros");
+    const output = link.addOutputDirectoryArg("web");
+    link.addFileArg2(emTool(b, emsdk, "em++"), .{ .make_absolute = true });
 
     if (optimize == .debug) {
         link.addArgs(&.{
@@ -209,22 +222,21 @@ fn emLinkStep(
         "-sFULL_ES3=1",
         "-sSUPPORT_LONGJMP=emscripten",
     });
-    link.addPrefixedFileArg("--shell-file=", b.path("web_assets/shell_minimal.html"));
+    link.addFileArg2(b.path("web_assets/shell_minimal.html"), .{ .prefix = "--shell-file=", .make_absolute = true });
 
     for (resource_files) |file| {
         link.addArg("--preload-file");
-        link.addFileArg2(b.path(file), .{ .suffix = b.fmt("@/{s}", .{file}) });
+        link.addFileArg2(b.path(file), .{ .suffix = b.fmt("@/{s}", .{file}), .make_absolute = true });
     }
 
-    link.addArtifactArg(lib);
+    link.addArtifactArg2(lib, .{ .make_absolute = true });
     for (lib.getCompileDependencies(false)) |dependency| {
-        if (dependency != lib and dependency.kind == .lib) link.addArtifactArg(dependency);
+        if (dependency != lib and dependency.kind == .lib) link.addArtifactArg2(dependency, .{ .make_absolute = true });
     }
 
-    link.addArg("-o");
-    const output = link.addOutputFileArg("index.html");
+    link.addArgs(&.{ "-o", "index.html" });
     return b.addInstallDirectory(.{
-        .source_dir = output.dirname(),
+        .source_dir = output,
         .install_dir = .prefix,
         .install_subdir = "web",
     });
